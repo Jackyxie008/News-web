@@ -1,0 +1,28 @@
+# --- 虚拟环境 (根目录下的 venv) ---
+venv/
+.venv/
+.env
+env/
+
+# --- Python 缓存与编译文件 ---
+**/__pycache__/
+*.py[cod]
+*$py.class
+
+# --- 后端数据与临时文件 (针对你的 backend 目录) ---
+backend/crawlers/temp.json
+backend/data/data.db
+backend/data/data_categorized_by_media/
+backend/models/
+backend/.env
+
+# --- 前端 (Vue 3) ---
+frontend/node_modules/
+frontend/dist/
+frontend/.local
+frontend/.env
+
+# --- 系统与编辑器 ---
+.DS_Store
+.vscode/
+*.log

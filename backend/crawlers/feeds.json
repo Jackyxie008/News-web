@@ -1,0 +1,41 @@
+[
+    {
+        "source": "BBC",
+        "rss_url": ["https://feeds.bbci.co.uk/news/rss.xml",
+                    "https://feeds.bbci.co.uk/news/world/rss.xml",
+                    "https://feeds.bbci.co.uk/news/business/rss.xml",
+                    "https://feeds.bbci.co.uk/news/politics/rss.xml"
+                    ],
+        "authority": 9,
+        "content_can_be_crawled": true,
+        "crawl": true
+    },
+    {
+        "source": "AP",
+        "rss_url": ["https://feedx.net/rss/ap.xml"],
+        "authority": 10,
+        "content_can_be_crawled": true,
+        "crawl": true
+    },
+    {
+        "source": "Reuters",
+        "rss_url": ["https://news.google.com/rss/search?q=source:reuters.com+when:12h&hl=en-US&gl=US&ceid=US:en"],
+        "authority": 10,
+        "content_can_be_crawled": false,
+        "crawl": true
+    },
+    {
+        "source": "AFP",
+        "rss_url": ["https://news.google.com/rss/search?q=source:url=%22https://www.afp.com%22+when:96h&hl=en-US&gl=US&ceid=US:en"],
+        "content_can_be_crawled": false,
+        "authority": 10,
+        "crawl": true
+    },
+    {
+        "source": "Al_Jazeera",
+        "rss_url": ["https://www.aljazeera.com/xml/rss/all.xml"],
+        "content_can_be_crawled": true,
+        "authority": 9,
+        "crawl": true
+    }
+]

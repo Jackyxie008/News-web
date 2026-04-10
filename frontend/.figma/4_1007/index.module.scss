@@ -1,0 +1,39 @@
+* {
+  box-sizing: border-box;
+}
+
+.calendarYearField {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 117px;
+  height: 28px;
+  row-gap: 8px;
+
+  .select {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    align-self: stretch;
+    column-gap: 8px;
+    border-radius: 8px;
+    background: var(--sds-color-background-default-default);
+    padding: 6px;
+
+    .a2025 {
+      flex-grow: 1;
+      line-height: 16px;
+      letter-spacing: 0;
+      color: #b3b3b3;
+      font-family: Inter, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", SimHei, Arial, Helvetica, sans-serif;
+      font-size: 16px;
+    }
+
+    .chevronDown {
+      flex-shrink: 0;
+      width: 16px;
+      height: 16px;
+      overflow: hidden;
+    }
+  }
+}

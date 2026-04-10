@@ -1,0 +1,19 @@
+* {
+  box-sizing: border-box;
+}
+
+.desktop1 {
+  display: flex;
+  align-items: flex-start;
+  background: var(--Miscellaneous-Window-Grabber, #000000);
+  padding-bottom: 963px;
+  width: 1440px;
+  height: 1024px;
+  overflow: hidden;
+
+  .rectangle1 {
+    background: #d9d9d9;
+    width: 1440px;
+    height: 61px;
+  }
+}

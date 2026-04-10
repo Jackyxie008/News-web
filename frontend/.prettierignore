@@ -1,0 +1,6 @@
+dist
+node_modules
+.figma
+.trae
+test_data.db
+
