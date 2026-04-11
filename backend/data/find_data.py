@@ -7,7 +7,10 @@ async def get_grouped_news(id):
     参数:
         id: grouped_news表中的分组ID
     返回:
-        (titles_text, contents_text): 合并后的标题字符串和正文字符串
+        (titles_text, contents_text, news_count): 
+            titles_text: 合并后的标题字符串
+            contents_text: 合并后的正文字符串
+            news_count: 该分组对应的新闻ID总数量(int)
     """
     db_path = Path("backend/data/data.db")
     
@@ -20,13 +23,13 @@ async def get_grouped_news(id):
         row = await cursor.fetchone()
         
         if not row or not row[0]:
-            return "", ""
+            return "", "", 0
         
         news_ids_str = row[0]
         news_ids = [int(nid.strip()) for nid in news_ids_str.split(',') if nid.strip().isdigit()]
         
         if not news_ids:
-            return "", ""
+            return "", "", 0
         
         # 2. 按authority从高到低排序，取前5条新闻
         placeholders = ','.join(['?'] * len(news_ids))
@@ -35,7 +38,7 @@ async def get_grouped_news(id):
             FROM news 
             WHERE id IN ({placeholders}) 
             ORDER BY authority DESC 
-            LIMIT 2
+            LIMIT 5
         """
         
         cursor = await conn.execute(query, news_ids)
@@ -58,14 +61,15 @@ async def get_grouped_news(id):
         titles_text = '\n\n'.join(titles)
         contents_text = '\n\n'.join(contents)
         
-        return titles_text, contents_text
+        return titles_text, contents_text, len(news_ids)
     
 if __name__ == "__main__":
     import asyncio
     
     async def main():
-        id = 7  # 替换为实际的分组ID
-        titles, contents = await get_grouped_news(id)
+        id = 1  # 替换为实际的分组ID
+        titles, contents, news_count = await get_grouped_news(id)
+        print(f"该分组共有 {news_count} 条新闻")
         print("-"*50+"Titles"+"-"*50)
         print(titles)
         print("-"*50+"Contents"+"-"*50)
