@@ -225,44 +225,52 @@ async def worker(name, queue, client, db_conn):
             if count == 1:
                 # 单条新闻：保留原标题，提炼干净内容，提取地点和关键词
                 prompt = f"""
-                你是一个资深新闻通稿编辑，擅长将信息总结成一个逻辑严密的单一新闻事件。
-                请阅读以下新闻，将其用英文总结为一条独立、完整的新闻报道：
-                1. 将正文清理成通顺干净的段落，消除重复，去掉广告、排版、多余符号，形成一个约 300-600 单词的流畅文章，不要列提纲。
-                2. 从新闻中挑选出【一个】最核心的地理位置。必须是具体的地名（如：澳门黑沙环、北京朝阳区），不要模糊。
-                3. 提取 3-5 个概括事件本质的关键词。
-                
-                标题：{titles}
-                原始内容：{contents}
-                
-                要求返回严格JSON格式，不要任何其他文字：
+                ### Role
+                You are a professional News Editor. Your task is to standardize news into a global GIS format.
+
+                ### Task
+                1. Summarize the following news into a clean, fluent English passage (300-500 words).
+                2. Extract exactly ONE specific core location name in English (e.g., "Cotai, Macau, China").
+                3. Extract 3-5 keywords in English.
+
+                ### CRITICAL: Language Requirement
+                Regardless of the input language, the output JSON fields ("full_text", "location", "keywords") MUST be in ENGLISH.
+
+                Input Title: {titles}
+                Input Content: {contents}
+
+                Return strictly in JSON format:
                 {{
-                    "full_text": "清理后的正文内容",
-                    "location": "提取到的地名",
-                    "keywords": ["关键词1", "关键词2", "关键词3"]
+                    "full_text": "The summarized news in English",
+                    "location": "The single location name in English",
+                    "keywords": ["tag1", "tag2", "tag3"]
                 }}
                 """
             else:
                 # 多条新闻聚合：提炼标题、摘要、地点、关键词
                 prompt = f"""
-                你是一个资深新闻通稿编辑，擅长将多源碎片信息聚合成一个逻辑严密的单一新闻事件。
-                请阅读以下多条新闻，将其【全部内容】用英文总结为【一条】独立、完整的新闻报道：
-                1. 综合标题：拟定一个涵盖所有关键信息的单一标题。
-                2. 深度总结：将所有来源的信息（时间、地点、人物、起因、结果、最新进展）揉合在一起，消除重复，形成一个约 300-600 单词的流畅文章，不要列提纲。
-                3. 唯一地点：从所有新闻中挑选出【一个】最核心的地理位置。必须是具体的地名（如：澳门黑沙环、北京朝阳区），不要模糊。
-                4. 核心标签：提取 3-5 个概括事件本质的关键词。
-                
-                所有新闻标题：
-                {titles}
-                
-                所有新闻内容：
-                {contents}
-                
-                要求返回严格JSON格式，不要任何其他文字：
+                ### Role
+                You are a senior News Synthesizer for a global news map.
+
+                ### Task
+                1. Merge all provided news into ONE single, coherent English report.
+                2. Create a unified English Title.
+                3. Write a deep-summary passage in English (300-500 words), merging all facts from sources.
+                4. Extract exactly ONE specific core location name in English (e.g., "Cotai, Macau, China").
+                5. Extract 3-5 keywords in English.
+
+                ### CRITICAL: Language Requirement
+                Regardless of the input language, the output JSON fields ("full_text", "location", "keywords") MUST be in ENGLISH.
+
+                Source Titles: {titles}
+                Source Contents: {contents}
+
+                Return strictly in JSON format:
                 {{
-                    "title": "事件标题",
-                    "full_text": "事件摘要",
-                    "location": "发生地点",
-                    "keywords": ["关键词1", "关键词2", "关键词3"]
+                    "title": "The synthesized English title",
+                    "full_text": "The synthesized English summary",
+                    "location": "The single central location in English",
+                    "keywords": ["tag1", "tag2", "tag3"]
                 }}
                 """
 
@@ -362,6 +370,6 @@ async def process_grouped_data(grouped_ids):
             w.cancel()
 
 if __name__ == "__main__":
-    ids =[10]
+    ids =[11]
     
     asyncio.run(process_grouped_data(ids))
