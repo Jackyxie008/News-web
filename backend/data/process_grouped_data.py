@@ -9,21 +9,29 @@ from dotenv import load_dotenv
 # 加载环境变量
 load_dotenv()
 
-GLM_API_KEY = os.getenv("GLM_API_KEY")
-SILICONFLOW_API_KEY = os.getenv("SILICONFLOW_API_KEY")
 DB_PATH = Path("backend/data/data.db")
 
 # API 配置映射
 PLATFORMS = {
     "zhi_pu": {
         "url": "https://api.z.ai/api/paas/v4/chat/completions",
-        "key": GLM_API_KEY,
-        "model": "glm-4-flash"
+        "key": os.getenv("GLM_API_KEY"),
+        "model": "GLM-4.7-Flash",
+        "extra_options": {
+        "thinking": {
+            "type": "disabled"
+            }
+        }
     },
     "silicon": {
         "url": "https://api.siliconflow.cn/v1/chat/completions",
-        "key": SILICONFLOW_API_KEY,
-        "model": "deepseek-ai/DeepSeek-V3"
+        "key": os.getenv("SILICONFLOW_API_KEY"),
+        "model": "Qwen/Qwen3.5-4B",
+        "extra_options": {
+        "thinking": {
+            "type": "disabled"
+            }
+        }
     }
 }
 
@@ -79,10 +87,10 @@ async def get_grouped_news(conn, id):
         if title:
             titles.append(title.strip())
         if full_text:
-            # 每条正文只取前3000个字符
+            # 每条正文只取前2000个字符
             cleaned_text = full_text.strip()
-            if len(cleaned_text) > 3000:
-                cleaned_text = cleaned_text[:3000] + "..."
+            if len(cleaned_text) > 2000:
+                cleaned_text = cleaned_text[:2000] + "..."
             contents.append(cleaned_text)
     
     titles_text = '\n\n'.join(titles)
@@ -215,15 +223,20 @@ async def worker(name, queue, client, db_conn):
 
             # 2. 根据新闻数量选择不同Prompt
             if count == 1:
-                # 单条新闻：只提取地点和关键词
+                # 单条新闻：保留原标题，提炼干净内容，提取地点和关键词
                 prompt = f"""
-                分析以下新闻，提取地理位置和关键词。
-                要求返回严格JSON格式，不要任何其他文字。
-                标题：{titles}
-                内容：{contents}
+                你是一个资深新闻通稿编辑，擅长将信息总结成一个逻辑严密的单一新闻事件。
+                请阅读以下新闻，将其用英文总结为一条独立、完整的新闻报道：
+                1. 将正文清理成通顺干净的段落，消除重复，去掉广告、排版、多余符号，形成一个约 300-600 单词的流畅文章，不要列提纲。
+                2. 从新闻中挑选出【一个】最核心的地理位置。必须是具体的地名（如：澳门黑沙环、北京朝阳区），不要模糊。
+                3. 提取 3-5 个概括事件本质的关键词。
                 
-                返回格式：
+                标题：{titles}
+                原始内容：{contents}
+                
+                要求返回严格JSON格式，不要任何其他文字：
                 {{
+                    "full_text": "清理后的正文内容",
                     "location": "提取到的地名",
                     "keywords": ["关键词1", "关键词2", "关键词3"]
                 }}
@@ -231,11 +244,12 @@ async def worker(name, queue, client, db_conn):
             else:
                 # 多条新闻聚合：提炼标题、摘要、地点、关键词
                 prompt = f"""
-                以下是同一事件的多条新闻，请提炼：
-                1. 为这个事件生成一个统一的简洁标题
-                2. 生成完整的事件摘要
-                3. 提取发生地点
-                4. 提取3-5个关键词
+                你是一个资深新闻通稿编辑，擅长将多源碎片信息聚合成一个逻辑严密的单一新闻事件。
+                请阅读以下多条新闻，将其【全部内容】用英文总结为【一条】独立、完整的新闻报道：
+                1. 综合标题：拟定一个涵盖所有关键信息的单一标题。
+                2. 深度总结：将所有来源的信息（时间、地点、人物、起因、结果、最新进展）揉合在一起，消除重复，形成一个约 300-600 单词的流畅文章，不要列提纲。
+                3. 唯一地点：从所有新闻中挑选出【一个】最核心的地理位置。必须是具体的地名（如：澳门黑沙环、北京朝阳区），不要模糊。
+                4. 核心标签：提取 3-5 个概括事件本质的关键词。
                 
                 所有新闻标题：
                 {titles}
@@ -261,6 +275,10 @@ async def worker(name, queue, client, db_conn):
                 "temperature": 0.1
             }
             
+            # 合并平台专属扩展参数 支持任意厂商私有字段
+            if "extra_options" in config:
+                payload.update(config["extra_options"])
+            
             response = await client.post(config['url'], headers=headers, json=payload, timeout=30)
             response.raise_for_status()
             
@@ -280,7 +298,12 @@ async def worker(name, queue, client, db_conn):
                 "keywords": json.dumps(ai_result.get("keywords", []), ensure_ascii=False)
             }
             
-            if count > 1:
+            if count == 1:
+                # 单条新闻：保留原始标题，使用AI清理后的内容
+                update_data["title"] = titles
+                update_data["full_text"] = ai_result.get("full_text", contents)
+            else:
+                # 多条新闻：AI生成全部字段
                 update_data["title"] = ai_result.get("title", "")
                 update_data["full_text"] = ai_result.get("full_text", "")
             
@@ -319,8 +342,16 @@ async def process_grouped_data(grouped_ids):
 
         # 2. 启动并发工人（Worker）
         workers = []
-        for i in range(3):
+
+        ZHIPU_CONCURRENCY = 1
+        SILICON_CONCURRENCY = 1
+
+        # 启动智谱工人
+        for i in range(ZHIPU_CONCURRENCY):
             workers.append(asyncio.create_task(worker(f"ZhiPu-{i}", queue, client, db_conn)))
+            
+        # 启动硅基工人
+        for i in range(SILICON_CONCURRENCY):
             workers.append(asyncio.create_task(worker(f"Silicon-{i}", queue, client, db_conn)))
 
         # 3. 等待队列中所有任务被处理完
@@ -331,23 +362,6 @@ async def process_grouped_data(grouped_ids):
             w.cancel()
 
 if __name__ == "__main__":
-    import sys
-    if len(sys.argv) > 1:
-        ids = [int(x) for x in sys.argv[1:]]
-        print(f"📌 手动指定处理ID: {ids}")
-    else:
-        print("🔍 正在读取待处理ID列表...")
-        # 主进程同步读取ID列表
-        import sqlite3
-        with sqlite3.connect(DB_PATH) as conn:
-            cursor = conn.execute(
-                "SELECT id FROM grouped_news WHERE latitude IS NULL OR latitude = '' ORDER BY id ASC"
-            )
-            ids = [row[0] for row in cursor.fetchall()]
-        print(f"✅ 发现 {len(ids)} 条待处理新闻分组")
-    
-    if not ids:
-        print("✅ 没有需要处理的新闻，程序退出")
-        exit(0)
+    ids =[10]
     
     asyncio.run(process_grouped_data(ids))
