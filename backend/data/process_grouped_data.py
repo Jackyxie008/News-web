@@ -49,6 +49,9 @@ platform_last_request = defaultdict(float)
 platform_fail_count = defaultdict(int)
 platform_circuit_breaker = defaultdict(float)
 
+# 全局停止事件 优雅退出用
+stop_event = asyncio.Event()
+
 async def get_grouped_news(conn, id):
     """
     根据分组ID获取聚合新闻
@@ -237,6 +240,9 @@ async def worker(name, queue, client, db_conn):
         # 从队列获取任务: (新闻ID, 已重试次数)
         news_id, retry_count = await queue.get()
         try:
+            if stop_event.is_set():
+                queue.task_done()
+                break
             print(f"[{name}] 正在处理 ID: {news_id} (重试次数:{retry_count})...")
             
             # 1. 获取数据
@@ -313,9 +319,34 @@ async def worker(name, queue, client, db_conn):
             if wait_time > 0:
                 await asyncio.sleep(wait_time)
             
-            # ✅ 熔断检查：连续失败太多就暂时禁用这个平台
+            # ✅ 熔断检查：平台已熔断时将任务放回队列由其他平台处理
             if platform_circuit_breaker[platform_key] > current_time:
-                raise Exception(f"平台 {platform_key} 已熔断 暂时跳过")
+                
+                # ✅ 全局健康检查：检测是否所有平台都已经熔断
+                all_dead = True
+                for pf in PLATFORMS.keys():
+                    if platform_circuit_breaker[pf] <= current_time:
+                        all_dead = False
+                        break
+                
+                if all_dead:
+                    print("\n\033[91m🚨 所有API平台全部熔断！发起优雅停止\033[0m")
+                    print("🚨 请检查你的API密钥是否被封禁，或者限流配置是否过高\n")
+                    stop_event.set()
+                    queue.task_done()
+                    continue
+                
+                # ✅ 单任务回滚次数保护：防止同一个任务无限死循环
+                if retry_count >= 5:
+                    print(f"\033[91m❌ ID {news_id} 回滚次数超限 永久放弃\033[0m")
+                    queue.task_done()
+                    continue
+                
+                # 正常回滚到其他平台
+                await queue.put( (news_id, retry_count + 1) )
+                await asyncio.sleep(10)
+                queue.task_done()
+                continue
             
             platform_last_request[platform_key] = asyncio.get_event_loop().time()
             
@@ -344,9 +375,20 @@ async def worker(name, queue, client, db_conn):
                 platform_fail_count[platform_key] = 0
                 
             except httpx.HTTPStatusError as e:
+                status = e.response.status_code
+                
+                if status == 400 or status == 403:
+                    # ❗ 400/403 代表内容违规 安全策略拒绝 绝对不能重试
+                    # 反复提交违规内容会导致整个账号被永久封禁
+                    print(f"\033[91m🚫 ID {news_id} 内容违规被平台拒绝 永久放弃此任务 不会重试\033[0m")
+                    platform_fail_count[platform_key] = 0
+                    queue.task_done()
+                    continue
+                
+                # 其他错误正常处理
                 platform_fail_count[platform_key] += 1
                 
-                if e.response.status_code == 429:
+                if status == 429:
                     # 触发限流 指数退避
                     backoff = 2 ** min(platform_fail_count[platform_key], 5)
                     print(f"\033[93m⚠️  平台 {platform_key} 限流 等待 {backoff} 秒\033[0m")
@@ -367,22 +409,35 @@ async def worker(name, queue, client, db_conn):
             loc_name = ai_result.get("location", "")
             lat, lon = await get_coordinates(client, loc_name)
             
-            # 5. 准备写入数据
-            update_data = {
-                "location": loc_name,
-                "latitude": lat,
-                "longitude": lon,
-                "keywords": json.dumps(ai_result.get("keywords", []), ensure_ascii=False)
-            }
+            # 5. 准备写入数据 严格类型校验
+            update_data = {}
             
+            # 地点名称 截断防止超长
+            update_data["location"] = str(loc_name).strip()[:200] if loc_name else ""
+            
+            # 经纬度严格范围校验
+            try:
+                update_data["latitude"] = float(lat) if lat and -90 <= float(lat) <= 90 else None
+            except (ValueError, TypeError):
+                update_data["latitude"] = None
+                
+            try:
+                update_data["longitude"] = float(lon) if lon and -180 <= float(lon) <= 180 else None
+            except (ValueError, TypeError):
+                update_data["longitude"] = None
+            
+            # 关键词 保证永远返回安全JSON
+            update_data["keywords"] = json.dumps(ai_result.get("keywords", []), ensure_ascii=False)
+            
+            # 标题和正文
             if count == 1:
                 # 单条新闻：保留原始标题，使用AI清理后的内容
-                update_data["title"] = titles
-                update_data["full_text"] = ai_result.get("full_text", contents)
+                update_data["title"] = str(titles).strip()[:500] if titles else ""
+                update_data["full_text"] = str(ai_result.get("full_text", contents)).strip() if contents else ""
             else:
                 # 多条新闻：AI生成全部字段
-                update_data["title"] = ai_result.get("title", "")
-                update_data["full_text"] = ai_result.get("full_text", "")
+                update_data["title"] = str(ai_result.get("title", "")).strip()[:500]
+                update_data["full_text"] = str(ai_result.get("full_text", "")).strip()
             
             # 6. 写入数据库
             await update_grouped_news(db_conn, news_id, update_data)
