@@ -18,7 +18,20 @@ PLATFORMS = {
     "zhi_pu": {
         "url": "https://api.z.ai/api/paas/v4/chat/completions",
         "rate_limit": 0.5,
+        "concurrency": 1,
         "key": os.getenv("GLM_API_KEY"),
+        "model": "GLM-4.5-Flash",
+        "extra_options": {
+        "thinking": {
+            "type": "disabled"
+            }
+        }
+    },
+    "zhi_pu_cn": {
+        "url": "https://open.bigmodel.cn/api/paas/v4/chat/completions",
+        "rate_limit": 0.5,
+        "concurrency": 1,
+        "key": os.getenv("GLM_CN_API_KEY"),
         "model": "GLM-4.7-Flash",
         "extra_options": {
         "thinking": {
@@ -29,8 +42,45 @@ PLATFORMS = {
     "silicon": {
         "url": "https://api.siliconflow.cn/v1/chat/completions",
         "rate_limit": 1.0,
+        "concurrency": 1,
         "key": os.getenv("SILICONFLOW_API_KEY"),
         "model": "Qwen/Qwen3.5-4B",
+        "extra_options": {
+        "thinking": {
+            "type": "disabled"
+            }
+        }
+    },
+    "nim_minimax-m2.7": {
+        "url": "https://integrate.api.nvidia.com/v1/chat/completions",
+        "rate_limit": 0.1,
+        "concurrency": 1,
+        "key": os.getenv("NIM_API_KEY"),
+        "model": "minimaxai/minimax-m2.7",
+        "extra_options": {
+        "thinking": {
+            "type": "disabled"
+            }
+        }
+    },
+    "nim_deepseek-v3.2": {
+        "url": "https://integrate.api.nvidia.com/v1/chat/completions",
+        "rate_limit": 0.1,
+        "concurrency": 1,
+        "key": os.getenv("NIM_API_KEY"),
+        "model": "deepseek-ai/deepseek-v3.2",
+        "extra_options": {
+        "thinking": {
+            "type": "disabled"
+            }
+        }
+    },
+    "nim_step-3.5-flash": {
+        "url": "https://integrate.api.nvidia.com/v1/chat/completions",
+        "rate_limit": 0.1,
+        "concurrency": 1,
+        "key": os.getenv("NIM_API_KEY"),
+        "model": "stepfun-ai/step-3.5-flash",
         "extra_options": {
         "thinking": {
             "type": "disabled"
@@ -216,23 +266,8 @@ async def update_grouped_news(conn, news_id, data):
     await conn.execute(query, values)
     await conn.commit()
 
-async def worker(name, queue, client, db_conn):
-    """消费者工人：支持跨平台失败重试"""
-    # 自动根据Worker名称匹配平台（通用适配任意数量平台）
-    # 命名约定: PLATFORMS key 的前缀匹配 Worker 名称即可
-    platform_key = None
-    name_lower = name.lower()
-    
-    for key in PLATFORMS:
-        platform_prefix = key.split('_')[0]
-        if platform_prefix in name_lower:
-            platform_key = key
-            break
-    
-    # 兜底防止出错
-    if not platform_key:
-        platform_key = next(iter(PLATFORMS.keys()))
-    
+async def worker(name, platform_key, queue, client, db_conn):
+    """消费者工人：绑定指定平台"""
     config = PLATFORMS[platform_key]
     MAX_RETRY = 2 # 总共尝试2次不同平台
     
@@ -368,7 +403,7 @@ async def worker(name, queue, client, db_conn):
                 payload.update(config["extra_options"])
             
             try:
-                response = await client.post(config['url'], headers=headers, json=payload, timeout=30)
+                response = await client.post(config['url'], headers=headers, json=payload, timeout=60)
                 response.raise_for_status()
                 
                 # 成功重置失败计数
@@ -472,19 +507,16 @@ async def process_grouped_data(grouped_ids):
         await db_conn.execute("PRAGMA temp_store = MEMORY")
         await db_conn.commit()
 
-        # 2. 启动并发工人（Worker）
+        # 2. 自动启动所有平台Worker
         workers = []
 
-        ZHIPU_CONCURRENCY = 1
-        SILICON_CONCURRENCY = 1
-
-        # 启动智谱工人
-        for i in range(ZHIPU_CONCURRENCY):
-            workers.append(asyncio.create_task(worker(f"ZhiPu-{i}", queue, client, db_conn)))
-            
-        # 启动硅基工人
-        for i in range(SILICON_CONCURRENCY):
-            workers.append(asyncio.create_task(worker(f"Silicon-{i}", queue, client, db_conn)))
+        for platform_key, config in PLATFORMS.items():
+            concurrency = config.get("concurrency", 1)
+            for i in range(concurrency):
+                worker_name = f"{platform_key}-{i}"
+                workers.append(asyncio.create_task(worker(worker_name, platform_key, queue, client, db_conn)))
+        
+        print(f"✅ 已启动 {len(workers)} 个工作线程，共 {len(PLATFORMS)} 个平台")
 
         # 3. 等待队列中所有任务被处理完
         await queue.join()

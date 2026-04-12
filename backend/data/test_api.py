@@ -32,7 +32,7 @@ async def test_single_platform(platform_name, config):
         
         headers = {"Authorization": f"Bearer {config['key']}"}
         
-        async with httpx.AsyncClient(timeout=20) as client:
+        async with httpx.AsyncClient(timeout=60) as client:
             resp = await client.post(config['url'], headers=headers, json=payload)
             
             elapsed = time.time() - start_time
