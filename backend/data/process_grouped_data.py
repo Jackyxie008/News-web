@@ -1,10 +1,12 @@
 import asyncio
 import os
 import json
+import random
 import httpx
 import aiosqlite
 from pathlib import Path
 from dotenv import load_dotenv
+from collections import defaultdict
 
 # 加载环境变量
 load_dotenv()
@@ -15,6 +17,7 @@ DB_PATH = Path("backend/data/data.db")
 PLATFORMS = {
     "zhi_pu": {
         "url": "https://api.z.ai/api/paas/v4/chat/completions",
+        "rate_limit": 0.5,
         "key": os.getenv("GLM_API_KEY"),
         "model": "GLM-4.7-Flash",
         "extra_options": {
@@ -25,6 +28,7 @@ PLATFORMS = {
     },
     "silicon": {
         "url": "https://api.siliconflow.cn/v1/chat/completions",
+        "rate_limit": 1.0,
         "key": os.getenv("SILICONFLOW_API_KEY"),
         "model": "Qwen/Qwen3.5-4B",
         "extra_options": {
@@ -37,6 +41,13 @@ PLATFORMS = {
 
 # 地图并发锁（依然保持 1，保护 IP）
 map_semaphore = asyncio.Semaphore(1)
+
+# 平台级限流状态
+platform_last_request = defaultdict(float)
+
+# 平台熔断状态
+platform_fail_count = defaultdict(int)
+platform_circuit_breaker = defaultdict(float)
 
 async def get_grouped_news(conn, id):
     """
@@ -99,40 +110,54 @@ async def get_grouped_news(conn, id):
     return titles_text, contents_text, len(news_ids)
 
 async def get_coordinates(client, location):
-    """地理编码：带缓存和频率限制"""
+    """地理编码：带多级降级搜索 自动向上查找行政区"""
     if not location: return None, None
+    
+    # 生成分级搜索列表 从细到粗
+    search_levels = [location]
+    
+    # 按空格、逗号拆分地名 生成降级搜索项
+    parts = [p.strip() for p in location.replace(',', ' ').split() if p.strip()]
+    for i in range(len(parts)-1, 0, -1):
+        search_levels.append(' '.join(parts[:i]))
+    
     async with map_semaphore:
-        try:
-            headers = {"User-Agent": "NewsMap/1.0"}
-            resp = await client.get(
-                "https://nominatim.openstreetmap.org/search",
-                params={"q": location, "format": "json", "limit": 1},
-                headers=headers,
-                timeout=15
-            )
-            await asyncio.sleep(1.1) # 严格遵守OSM使用协议 每秒最多1次请求
-            
-            if resp.status_code == 403:
-                print("\n\033[91m🚨 严重警告: OpenStreetMap API 返回403 你的IP已经被临时封禁！")
-                print("🚨 请立即停止程序，至少等待2小时后再运行，否则封禁时间会延长\033[0m\n")
-                return None, None
-            
-            if resp.status_code == 429:
-                print("\033[93m⚠️ OSM 请求频率超限 额外等待5秒\033[0m")
-                await asyncio.sleep(5)
-                return None, None
-            
-            if resp.status_code != 200:
-                print(f"\033[93m⚠️ OSM 请求失败 状态码: {resp.status_code}\033[0m")
-                return None, None
-            
-            data = resp.json()
-            if data:
-                return data[0]["lat"], data[0]["lon"]
-            
-        except Exception as e:
-            print(f"\033[93m⚠️ 地理编码请求异常: {str(e)[:60]}\033[0m")
-            
+        for level, query in enumerate(search_levels):
+            try:
+                headers = {"User-Agent": "NewsMap/1.0"}
+                resp = await client.get(
+                    "https://nominatim.openstreetmap.org/search",
+                    params={"q": query, "format": "json", "limit": 1},
+                    headers=headers,
+                    timeout=15
+                )
+                await asyncio.sleep(1.1) # 严格遵守OSM使用协议 每秒最多1次请求
+                
+                if resp.status_code == 403:
+                    print("\n\033[91m🚨 严重警告: OpenStreetMap API 返回403 你的IP已经被临时封禁！")
+                    print("🚨 请立即停止程序，至少等待2小时后再运行，否则封禁时间会延长\033[0m\n")
+                    return None, None
+                
+                if resp.status_code == 429:
+                    print("\033[93m⚠️ OSM 请求频率超限 额外等待5秒\033[0m")
+                    await asyncio.sleep(5)
+                    continue
+                
+                if resp.status_code != 200:
+                    continue
+                
+                data = resp.json()
+                if data:
+                    if level > 0:
+                        print(f"\033[93m⚠️  地名降级匹配: '{location}' → '{query}'\033[0m")
+                    return data[0]["lat"], data[0]["lon"]
+                
+            except Exception as e:
+                print(f"\033[93m⚠️ 地理编码请求异常: {str(e)[:60]}\033[0m")
+                continue
+    
+    # 所有级别都搜索失败
+    print(f"\033[91m❌ 地名匹配失败: {location}\033[0m")
     return None, None
 
 async def get_all_unprocessed_ids(conn):
@@ -275,20 +300,64 @@ async def worker(name, queue, client, db_conn):
                 """
 
             # 3. 调用 AI
-            headers = {"Authorization": f"Bearer {config['key']}"}
+            current_time = asyncio.get_event_loop().time()
+            
+            # ✅ 平台级限流 + 随机抖动防封
+            rate_limit = config.get("rate_limit", 1.0)
+            min_interval = 1.0 / rate_limit
+            jitter = random.uniform(-0.2, 0.2) * min_interval
+            
+            time_since_last = current_time - platform_last_request[platform_key]
+            wait_time = max(0, min_interval + jitter - time_since_last)
+            
+            if wait_time > 0:
+                await asyncio.sleep(wait_time)
+            
+            # ✅ 熔断检查：连续失败太多就暂时禁用这个平台
+            if platform_circuit_breaker[platform_key] > current_time:
+                raise Exception(f"平台 {platform_key} 已熔断 暂时跳过")
+            
+            platform_last_request[platform_key] = asyncio.get_event_loop().time()
+            
+            headers = {
+                "Authorization": f"Bearer {config['key']}",
+                "Content-Type": "application/json",
+                "User-Agent": "NewsMapBot/1.0",
+                **config.get("extra_headers", {})
+            }
             payload = {
                 "model": config['model'],
                 "messages": [{"role": "user", "content": prompt}],
                 "response_format": {"type": "json_object"},
-                "temperature": 0.1
+                "temperature": 0.1 + random.uniform(-0.03, 0.03)
             }
             
             # 合并平台专属扩展参数 支持任意厂商私有字段
             if "extra_options" in config:
                 payload.update(config["extra_options"])
             
-            response = await client.post(config['url'], headers=headers, json=payload, timeout=30)
-            response.raise_for_status()
+            try:
+                response = await client.post(config['url'], headers=headers, json=payload, timeout=30)
+                response.raise_for_status()
+                
+                # 成功重置失败计数
+                platform_fail_count[platform_key] = 0
+                
+            except httpx.HTTPStatusError as e:
+                platform_fail_count[platform_key] += 1
+                
+                if e.response.status_code == 429:
+                    # 触发限流 指数退避
+                    backoff = 2 ** min(platform_fail_count[platform_key], 5)
+                    print(f"\033[93m⚠️  平台 {platform_key} 限流 等待 {backoff} 秒\033[0m")
+                    await asyncio.sleep(backoff)
+                
+                if platform_fail_count[platform_key] >= 10:
+                    # 连续失败10次 熔断15分钟
+                    platform_circuit_breaker[platform_key] = current_time + 900
+                    print(f"\033[91m🚨 平台 {platform_key} 连续失败10次 熔断15分钟\033[0m")
+                
+                raise
             
             raw_content = response.json()["choices"][0]["message"]["content"]
             cleaned_content = clean_json_response(raw_content)
@@ -370,6 +439,6 @@ async def process_grouped_data(grouped_ids):
             w.cancel()
 
 if __name__ == "__main__":
-    ids =[11]
+    ids =[12, 13, 14, 15, 16]
     
     asyncio.run(process_grouped_data(ids))
