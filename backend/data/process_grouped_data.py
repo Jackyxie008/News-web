@@ -15,19 +15,7 @@ DB_PATH = Path("backend/data/data.db")
 
 # API 配置映射
 PLATFORMS = {
-    "zhi_pu": {
-        "url": "https://api.z.ai/api/paas/v4/chat/completions",
-        "rate_limit": 0.5,
-        "concurrency": 1,
-        "key": os.getenv("GLM_API_KEY"),
-        "model": "GLM-4.5-Flash",
-        "extra_options": {
-        "thinking": {
-            "type": "disabled"
-            }
-        }
-    },
-    "zhi_pu_cn": {
+    "zhi_pu_cn_GLM-4.7-Flash": {
         "url": "https://open.bigmodel.cn/api/paas/v4/chat/completions",
         "rate_limit": 0.5,
         "concurrency": 1,
@@ -39,7 +27,7 @@ PLATFORMS = {
             }
         }
     },
-    "silicon": {
+    "silicon_Qwen3.5-4B": {
         "url": "https://api.siliconflow.cn/v1/chat/completions",
         "rate_limit": 1.0,
         "concurrency": 1,
@@ -75,12 +63,12 @@ PLATFORMS = {
             }
         }
     },
-    "nim_step-3.5-flash": {
-        "url": "https://integrate.api.nvidia.com/v1/chat/completions",
-        "rate_limit": 0.1,
+    "silicon_DeepSeek-R1-Distill-Qwen-7B": {
+        "url": "https://api.siliconflow.cn/v1/chat/completions",
+        "rate_limit": 1.0,
         "concurrency": 1,
-        "key": os.getenv("NIM_API_KEY"),
-        "model": "stepfun-ai/step-3.5-flash",
+        "key": os.getenv("SILICONFLOW_API_KEY"),
+        "model": "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
         "extra_options": {
         "thinking": {
             "type": "disabled"
@@ -276,7 +264,6 @@ async def worker(name, platform_key, queue, client, db_conn):
         news_id, retry_count = await queue.get()
         try:
             if stop_event.is_set():
-                queue.task_done()
                 break
             print(f"[{name}] 正在处理 ID: {news_id} (重试次数:{retry_count})...")
             
@@ -284,7 +271,6 @@ async def worker(name, platform_key, queue, client, db_conn):
             titles, contents, count = await get_grouped_news(db_conn, news_id)
             if count <= 0:
                 print(f"[{name}] ID {news_id} 没有新闻数据，跳过")
-                queue.task_done()
                 continue
 
             # 2. 根据新闻数量选择不同Prompt
@@ -296,7 +282,11 @@ async def worker(name, platform_key, queue, client, db_conn):
 
                 ### Task
                 1. Summarize the following news into a clean, fluent English passage (300-500 words).
-                2. Extract exactly ONE specific core location name in English (e.g., "Cotai, Macau, China").
+                2. Extract exactly ONE specific core location name in English.
+                    - CRITICAL: If no specific city is mentioned, use the most relevant Country or Province.
+                    - FORMAT: "City, Province/State, Country" (e.g., "Gaza City, Gaza Strip", "Austin, Texas, USA").
+                    - NO EMPTY: Never return an empty string for location. If unknown, return the country name of the news origin.
+                    - EXAMPLE: "Silicon Valley, California, USA" or "Paris, France" or just "Japan".
                 3. Extract 3-5 keywords in English.
 
                 ### CRITICAL: Language Requirement
@@ -322,7 +312,11 @@ async def worker(name, platform_key, queue, client, db_conn):
                 1. Merge all provided news into ONE single, coherent English report.
                 2. Create a unified English Title.
                 3. Write a deep-summary passage in English (300-500 words), merging all facts from sources.
-                4. Extract exactly ONE specific core location name in English (e.g., "Cotai, Macau, China").
+                4. Extract exactly ONE specific core location name in English.
+                    - CRITICAL: If no specific city is mentioned, use the most relevant Country or Province.
+                    - FORMAT: "City, Province/State, Country" (e.g., "Gaza City, Gaza Strip", "Austin, Texas, USA").
+                    - NO EMPTY: Never return an empty string for location. If unknown, return the country name of the news origin.
+                    - EXAMPLE: "Silicon Valley, California, USA" or "Paris, France" or just "Japan".
                 5. Extract 3-5 keywords in English.
 
                 ### CRITICAL: Language Requirement
@@ -368,19 +362,16 @@ async def worker(name, platform_key, queue, client, db_conn):
                     print("\n\033[91m🚨 所有API平台全部熔断！发起优雅停止\033[0m")
                     print("🚨 请检查你的API密钥是否被封禁，或者限流配置是否过高\n")
                     stop_event.set()
-                    queue.task_done()
                     continue
                 
                 # ✅ 单任务回滚次数保护：防止同一个任务无限死循环
-                if retry_count >= 5:
+                if retry_count >= 3:
                     print(f"\033[91m❌ ID {news_id} 回滚次数超限 永久放弃\033[0m")
-                    queue.task_done()
                     continue
                 
                 # 正常回滚到其他平台
                 await queue.put( (news_id, retry_count + 1) )
                 await asyncio.sleep(10)
-                queue.task_done()
                 continue
             
             platform_last_request[platform_key] = asyncio.get_event_loop().time()
@@ -417,7 +408,6 @@ async def worker(name, platform_key, queue, client, db_conn):
                     # 反复提交违规内容会导致整个账号被永久封禁
                     print(f"\033[91m🚫 ID {news_id} 内容违规被平台拒绝 永久放弃此任务 不会重试\033[0m")
                     platform_fail_count[platform_key] = 0
-                    queue.task_done()
                     continue
                 
                 # 其他错误正常处理
@@ -526,6 +516,6 @@ async def process_grouped_data(grouped_ids):
             w.cancel()
 
 if __name__ == "__main__":
-    ids =[12, 13, 14, 15, 16]
-    
+    #ids =[i for i in range(46, 56)]
+    ids = [57]
     asyncio.run(process_grouped_data(ids))

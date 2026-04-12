@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
 """
 通用新闻爬虫 - 使用 Scrapy 框架
 可以被其他代码导入使用

@@ -25,7 +25,9 @@ async def fetch(session, url):
     """
     try:
         # 设置 20 秒超时，使用自定义 User-Agent
-        async with session.get(url, timeout=20, headers={"User-Agent": "PersonalNewsBot/1.0"}) as resp:
+        async with session.get(url, timeout=20, headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,webp,*/*;q=0.8"}) as resp:
             if resp.status != 200:
                 return None  # 非 200 状态码返回 None
             return await resp.text()  # 返回网页文本内容
