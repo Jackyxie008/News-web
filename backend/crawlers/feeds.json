@@ -26,7 +26,7 @@
     },
     {
         "source": "AFP",
-        "rss_url": ["https://news.google.com/rss/search?q=source:url=%22https://www.afp.com%22+when:96h&hl=en-US&gl=US&ceid=US:en"],
+        "rss_url": ["https://rsshub.rssforever.com/yahoo/news/provider/hk/afp.com.hk"],
         "content_can_be_crawled": false,
         "authority": 10,
         "crawl": true
@@ -36,6 +36,13 @@
         "rss_url": ["https://www.aljazeera.com/xml/rss/all.xml"],
         "content_can_be_crawled": true,
         "authority": 9,
+        "crawl": true
+    },
+    {
+        "source": "News_gov_mo",
+        "rss_url": ["https://govinfohub.gcs.gov.mo/api/rss/n/zh-hant"],
+        "content_can_be_crawled": true,
+        "authority": 1,
         "crawl": true
     }
 ]

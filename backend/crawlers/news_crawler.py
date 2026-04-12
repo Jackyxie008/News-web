@@ -9,8 +9,49 @@ from pathlib import Path
 import pandas as pd
 import re
 import json
-from crawlers.functions import deduplicate_news_list
 
+
+def deduplicate_news_list(news_list):
+    """
+    根据链接查重并去重新闻列表
+    
+    Args:
+        news_list (list): 新闻数据列表，每个元素应包含link字段
+        
+    Returns:
+        tuple: (去重后的新闻列表, 删除的重复新闻数量)
+    """
+    if not isinstance(news_list, list):
+        print("输入数据格式错误，应为列表格式")
+        return [], 0
+    
+    if not news_list:
+        return [], 0
+    
+    # 使用pandas进行去重
+    df = pd.DataFrame(news_list)
+    
+    # 检查是否有link字段
+    if 'link' not in df.columns:
+        print("数据中缺少link字段，无法去重")
+        return news_list, 0
+    
+    # 记录去重前的数量
+    original_count = len(df)
+    
+    # 根据link字段去重，保留第一次出现的记录
+    df_deduplicated = df.drop_duplicates(subset=['link'], keep='first')
+    
+    # 记录去重后的数量
+    deduplicated_count = len(df_deduplicated)
+    
+    # 计算删除的重复数量
+    duplicates_count = original_count - deduplicated_count
+    
+    # 转换回列表格式
+    unique_news = df_deduplicated.to_dict('records')
+    
+    return unique_news, duplicates_count
 
 async def fetch(session, url):
     """
@@ -60,37 +101,7 @@ async def process_entry(session, entry, source, authority):
     # 使用 trafilatura 提取网页正文内容（自动去除广告、导航等噪音）
     # 两种方式：直接从 URL 获取或从已下载的 HTML 提取
     downloaded = trafilatura.fetch_url(link)  # 从 URL 直接获取
-    text = trafilatura.extract(
-        downloaded or html,
-        include_links=False,      # 不提取链接
-        include_images=False,     # 不提取图片标记
-        include_tables=False,     # 不提取表格
-        no_fallback=True,         # 不使用回退提取策略（避免噪音）
-        deduplicate=True,         # 自动去重段落
-        favor_precision=True,     # 优先精度而非召回率（减少无关内容）
-        with_metadata=False,      # 不返回元数据
-        output_format="txt",      # 输出纯文本格式
-        url=link                  # 传入URL帮助提取器上下文判断
-    )  # 提取正文
-
-    # 后置清理：移除常见的无用内容
-    if text:
-        # 按行清理
-        lines = text.splitlines()
-        cleaned_lines = []
-        for line in lines:
-            line = line.strip()
-            # 过滤过短的行、版权声明、导航文字等
-            if len(line) < 30:
-                continue
-            # 过滤常见页脚关键词
-            lower_line = line.lower()
-            skip_keywords = ['版权所有', 'copyright', '所有权利保留', '转载请注明', '免责声明', '联系方式', '相关文章', '阅读更多', '下一篇', '上一篇', '欢迎关注', '微信公众号', '©']
-            if any(keyword in lower_line for keyword in skip_keywords):
-                continue
-            cleaned_lines.append(line)
-        # 重新组合文本
-        text = '\n\n'.join(cleaned_lines)
+    text = trafilatura.extract(downloaded or html)  # 提取正文
 
     # 在 summary_text 中提取图片链接
     summary_text = entry.get("summary") or entry.get("description")
