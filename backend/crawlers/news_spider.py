@@ -320,7 +320,7 @@ def main():
     """主函数 - 测试用"""
     # 测试URL列表
     test_urls = [
-        "https://news.google.com/rss/articles/CBMivAFBVV95cUxQMGloQkdqbkNzdkVVRy1TQnpjUGJseVhkdC1SMjlZMHRJbmV3VVNqRG9FUU43Mmw2aUx6Mml4RjlxX1Z5SGZ0UEpwM1hlSlFNTVZsbVpSdmlhYXZEeHpzRmpnRi03c2I0UXNSYmlKREJEa2N0eV9RakpyNHVic0kxREkxTGcxOVRQTjVyUlhoMGFsSlRvTXhGOTZSVmZCdW1mQXNnb0l2dGlBZ1Y1RzJCR3JocFU2Mmhkelphdw?oc=5"
+        "https://www.gcs.gov.mo/news/detail/zh-hant/N26DMJOMVL"
     ]
     
     print("=" * 60)

@@ -15,7 +15,7 @@
         "rss_url": ["https://feedx.net/rss/ap.xml"],
         "authority": 10,
         "content_can_be_crawled": true,
-        "crawl": false
+        "crawl": true
     },
     {
         "source": "Reuters",
@@ -29,7 +29,7 @@
         "rss_url": ["https://rsshub.rssforever.com/yahoo/news/provider/hk/afp.com.hk"],
         "content_can_be_crawled": false,
         "authority": 10,
-        "crawl": false
+        "crawl": true
     },
     {
         "source": "Al_Jazeera",
@@ -41,7 +41,7 @@
     {
         "source": "News_gov_mo",
         "rss_url": ["https://govinfohub.gcs.gov.mo/api/rss/n/zh-hant"],
-        "content_can_be_crawled": true,
+        "content_can_be_crawled": false,
         "authority": 1,
         "crawl": true
     }

@@ -49,6 +49,12 @@ platform_last_request = defaultdict(float)
 platform_fail_count = defaultdict(int)
 platform_circuit_breaker = defaultdict(float)
 
+# 任务-平台失败追踪：{ news_id: { platform_key: failed_timestamp, ... } }
+news_platform_failures = defaultdict(dict)
+
+# 失败回避冷却时间（秒）：同一个平台处理同一条新闻失败后，至少过这么久才能再碰这条新闻
+FAILURE_COOLDOWN = 120
+
 # 全局停止事件 优雅退出用
 stop_event = asyncio.Event()
 
@@ -232,11 +238,31 @@ async def worker(name, platform_key, queue, client, db_conn):
     MAX_RETRY = 2 # 总共尝试2次不同平台
     
     while True:
-        # 从队列获取任务: (新闻ID, 已重试次数)
-        news_id, retry_count = await queue.get()
+        # 从队列获取任务: (新闻ID, 已重试次数, 跳过平台集合)
+        task = await queue.get()
+        if len(task) == 2:
+            # 兼容旧格式任务
+            news_id, retry_count = task
+            skip_platforms = set()
+        else:
+            news_id, retry_count, skip_platforms = task
+            
         try:
             if stop_event.is_set():
                 break
+
+            # ✅ 前置检查：这个新闻在当前平台是否还在冷却回避期
+            current_time = asyncio.get_event_loop().time()
+            failed_time = news_platform_failures.get(news_id, {}).get(platform_key, 0)
+            
+            # 如果这个平台还在回避冷却期，或者明确要求跳过
+            if current_time < failed_time or platform_key in skip_platforms:
+                # 把任务放回队列末尾，给其他平台机会
+                await queue.put( (news_id, retry_count, skip_platforms) )
+                # 短暂延迟避免死循环抢任务
+                await asyncio.sleep(0.1)
+                continue
+            
             print(f"[{name}] 正在处理 ID: {news_id} (重试次数:{retry_count})...")
             
             # 1. 获取数据
@@ -270,7 +296,7 @@ async def worker(name, platform_key, queue, client, db_conn):
 
                 Return strictly in JSON format:
                 {{
-                    "title": "The English title",
+                    "title": "The English title you created based on the original title",
                     "full_text": "The summarized news in English",
                     "location": "The single location name in English",
                     "keywords": ["tag1", "tag2", "tag3"]
@@ -443,13 +469,33 @@ async def worker(name, platform_key, queue, client, db_conn):
             
             print(f"✅ [{name}] 完成 ID {news_id}: {loc_name} ({lat}, {lon})")
             
+            # ✅ 处理成功，清理这条新闻的失败记录释放内存
+            news_platform_failures.pop(news_id, None)
         except Exception as e:
-            if retry_count < MAX_RETRY:
-                # 失败重新放回队列，下一次会被另一个平台Worker捡到
-                await queue.put( (news_id, retry_count + 1) )
-                print(f"⚠️  [{name}] ID {news_id} 失败，重新入队，下次重试")
+            # ✅ 记录这个平台处理这条新闻失败了
+            current_time = asyncio.get_event_loop().time()
+            news_platform_failures[news_id][platform_key] = current_time + FAILURE_COOLDOWN
+            
+            # ✅ 把当前平台加入跳过列表
+            new_skip = set(skip_platforms)
+            new_skip.add(platform_key)
+            
+            # 检查是否所有平台都已经试过了
+            all_tried = len(new_skip) >= len(PLATFORMS)
+            
+            if all_tried:
+                # 所有平台都试过一轮了，重置跳过列表，重试次数+1
+                if retry_count < MAX_RETRY:
+                    await queue.put( (news_id, retry_count + 1, set()) )
+                    print(f"⚠️  [{name}] ID {news_id} 所有平台都试过一轮，进入第 {retry_count+2} 轮重试")
+                else:
+                    print(f"❌ [{name}] ID {news_id} 跨平台重试全部失败，永久放弃: {str(e)[:100]}")
+                    # 清理失败记录释放内存
+                    news_platform_failures.pop(news_id, None)
             else:
-                print(f"❌ [{name}] ID {news_id} 跨平台重试全部失败，永久放弃: {str(e)[:100]}")
+                # 还有平台没试过，带着跳过列表重新入队
+                await queue.put( (news_id, retry_count, new_skip) )
+                print(f"⚠️  [{name}] ID {news_id} 在 {platform_key} 失败，跳过此平台，交给其他平台处理")
         finally:
             # 告诉队列任务完成
             queue.task_done()
