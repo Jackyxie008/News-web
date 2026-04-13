@@ -8,28 +8,28 @@
                     ],
         "authority": 9,
         "content_can_be_crawled": true,
-        "crawl": true
+        "crawl": false
     },
     {
         "source": "AP",
         "rss_url": ["https://feedx.net/rss/ap.xml"],
         "authority": 10,
         "content_can_be_crawled": true,
-        "crawl": true
+        "crawl": false
     },
     {
         "source": "Reuters",
         "rss_url": ["https://news.google.com/rss/search?q=source:reuters.com+when:12h&hl=en-US&gl=US&ceid=US:en"],
         "authority": 10,
         "content_can_be_crawled": false,
-        "crawl": true
+        "crawl": false
     },
     {
         "source": "AFP",
         "rss_url": ["https://rsshub.rssforever.com/yahoo/news/provider/hk/afp.com.hk"],
         "content_can_be_crawled": false,
         "authority": 10,
-        "crawl": true
+        "crawl": false
     },
     {
         "source": "Al_Jazeera",

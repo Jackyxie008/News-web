@@ -13,69 +13,31 @@ load_dotenv()
 
 DB_PATH = Path("backend/data/data.db")
 
-# API 配置映射
-PLATFORMS = {
-    "zhi_pu_cn_GLM-4.7-Flash": {
-        "url": "https://open.bigmodel.cn/api/paas/v4/chat/completions",
-        "rate_limit": 0.5,
-        "concurrency": 1,
-        "key": os.getenv("GLM_CN_API_KEY"),
-        "model": "GLM-4.7-Flash",
-        "extra_options": {
-        "thinking": {
-            "type": "disabled"
-            }
-        }
-    },
-    "silicon_Qwen3.5-4B": {
-        "url": "https://api.siliconflow.cn/v1/chat/completions",
-        "rate_limit": 1.0,
-        "concurrency": 1,
-        "key": os.getenv("SILICONFLOW_API_KEY"),
-        "model": "Qwen/Qwen3.5-4B",
-        "extra_options": {
-        "thinking": {
-            "type": "disabled"
-            }
-        }
-    },
-    "nim_minimax-m2.7": {
-        "url": "https://integrate.api.nvidia.com/v1/chat/completions",
-        "rate_limit": 0.1,
-        "concurrency": 1,
-        "key": os.getenv("NIM_API_KEY"),
-        "model": "minimaxai/minimax-m2.7",
-        "extra_options": {
-        "thinking": {
-            "type": "disabled"
-            }
-        }
-    },
-    "nim_deepseek-v3.2": {
-        "url": "https://integrate.api.nvidia.com/v1/chat/completions",
-        "rate_limit": 0.1,
-        "concurrency": 1,
-        "key": os.getenv("NIM_API_KEY"),
-        "model": "deepseek-ai/deepseek-v3.2",
-        "extra_options": {
-        "thinking": {
-            "type": "disabled"
-            }
-        }
-    },
-    "silicon_DeepSeek-R1-Distill-Qwen-7B": {
-        "url": "https://api.siliconflow.cn/v1/chat/completions",
-        "rate_limit": 1.0,
-        "concurrency": 1,
-        "key": os.getenv("SILICONFLOW_API_KEY"),
-        "model": "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
-        "extra_options": {
-        "thinking": {
-            "type": "disabled"
-            }
-        }
-    }
-}
+# API 配置映射 - 从外部JSON配置文件加载
+PLATFORMS = {}
+
+try:
+    with open(Path("backend/data/platforms.json"), "r", encoding="utf-8") as f:
+        config = json.load(f)
+    
+    # 自动注入环境变量中的API密钥
+    enabled_count = 0
+    for platform_id, platform_config in config.items():
+        # 只加载启用的平台
+        if not platform_config.get("enabled", False):
+            continue
+            
+        env_key = platform_config.pop("env_key")
+        platform_config["key"] = os.getenv(env_key)
+        PLATFORMS[platform_id] = platform_config
+        enabled_count += 1
+        
+    print(f"✅ 已加载 {enabled_count} 个启用的API平台，共定义 {len(config)} 个平台")
+    
+except Exception as e:
+    print(f"\033[91m❌ 加载平台配置文件失败: {str(e)}\033[0m")
+    print("请检查 backend/data/platforms.json 文件是否存在并且格式正确")
+    exit(1)
 
 # 地图并发锁（依然保持 1，保护 IP）
 map_semaphore = asyncio.Semaphore(1)
@@ -159,8 +121,18 @@ async def get_coordinates(client, location):
     
     # 按空格、逗号拆分地名 生成降级搜索项
     parts = [p.strip() for p in location.replace(',', ' ').split() if p.strip()]
+    
+    # 方案 A: 去掉后面 (适合处理详细街道地址)
     for i in range(len(parts)-1, 0, -1):
         search_levels.append(' '.join(parts[:i]))
+    
+    # 方案 B: 去掉前面 (适合处理 AI 幻觉词)
+    for i in range(1, len(parts)):
+        search_levels.append(' '.join(parts[i:]))
+    
+    # 去重保持顺序 避免重复搜索相同地名
+    seen = set()
+    search_levels = [x for x in search_levels if not (x in seen or seen.add(x))]
     
     async with map_semaphore:
         for level, query in enumerate(search_levels):
@@ -282,21 +254,23 @@ async def worker(name, platform_key, queue, client, db_conn):
 
                 ### Task
                 1. Summarize the following news into a clean, fluent English passage (300-500 words).
-                2. Extract exactly ONE specific core location name in English.
+                2. Create an English title based on the original title.
+                3. Extract exactly ONE specific core location name in English.
                     - CRITICAL: If no specific city is mentioned, use the most relevant Country or Province.
                     - FORMAT: "City, Province/State, Country" (e.g., "Gaza City, Gaza Strip", "Austin, Texas, USA").
                     - NO EMPTY: Never return an empty string for location. If unknown, return the country name of the news origin.
                     - EXAMPLE: "Silicon Valley, California, USA" or "Paris, France" or just "Japan".
-                3. Extract 3-5 keywords in English.
+                4. Extract 3-5 keywords in English.
 
                 ### CRITICAL: Language Requirement
-                Regardless of the input language, the output JSON fields ("full_text", "location", "keywords") MUST be in ENGLISH.
+                Regardless of the input language, the output JSON fields MUST be in ENGLISH.
 
                 Input Title: {titles}
                 Input Content: {contents}
 
                 Return strictly in JSON format:
                 {{
+                    "title": "The English title",
                     "full_text": "The summarized news in English",
                     "location": "The single location name in English",
                     "keywords": ["tag1", "tag2", "tag3"]
@@ -320,7 +294,7 @@ async def worker(name, platform_key, queue, client, db_conn):
                 5. Extract 3-5 keywords in English.
 
                 ### CRITICAL: Language Requirement
-                Regardless of the input language, the output JSON fields ("full_text", "location", "keywords") MUST be in ENGLISH.
+                Regardless of the input language, the output JSON fields MUST be in ENGLISH.
 
                 Source Titles: {titles}
                 Source Contents: {contents}
@@ -456,8 +430,8 @@ async def worker(name, platform_key, queue, client, db_conn):
             
             # 标题和正文
             if count == 1:
-                # 单条新闻：保留原始标题，使用AI清理后的内容
-                update_data["title"] = str(titles).strip()[:500] if titles else ""
+                # 单条新闻：使用AI生成的规范标题，以及清理后的内容
+                update_data["title"] = str(ai_result.get("title", titles)).strip()[:500]
                 update_data["full_text"] = str(ai_result.get("full_text", contents)).strip() if contents else ""
             else:
                 # 多条新闻：AI生成全部字段
@@ -515,7 +489,16 @@ async def process_grouped_data(grouped_ids):
         for w in workers:
             w.cancel()
 
+async def process_all_unprocessed():
+    """自动获取并处理所有未处理的分组 主入口"""
+    async with aiosqlite.connect(DB_PATH) as conn:
+        ids = await get_all_unprocessed_ids(conn)
+        if ids:
+            print(f"发现 {len(ids)} 个未处理的新闻分组，开始处理...")
+            await process_grouped_data(ids)
+            print("✅ 所有分组数据处理完成！")
+        else:
+            print("没有需要处理的新分组")
+
 if __name__ == "__main__":
-    #ids =[i for i in range(46, 56)]
-    ids = [57]
-    asyncio.run(process_grouped_data(ids))
+    asyncio.run(process_all_unprocessed())

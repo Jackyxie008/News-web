@@ -1,0 +1,67 @@
+{
+  "zhi_pu_cn_GLM-4.7-Flash": {
+    "enabled": true,
+    "url": "https://open.bigmodel.cn/api/paas/v4/chat/completions",
+    "rate_limit": 0.5,
+    "concurrency": 1,
+    "env_key": "GLM_CN_API_KEY",
+    "model": "GLM-4.7-Flash",
+    "extra_options": {
+      "thinking": {
+        "type": "disabled"
+      }
+    }
+  },
+  "silicon_Qwen3.5-4B": {
+    "enabled": true,
+    "url": "https://api.siliconflow.cn/v1/chat/completions",
+    "rate_limit": 1.0,
+    "concurrency": 1,
+    "env_key": "SILICONFLOW_API_KEY",
+    "model": "Qwen/Qwen3.5-4B",
+    "extra_options": {
+      "thinking": {
+        "type": "disabled"
+      }
+    }
+  },
+  "nim_minimax-m2.7": {
+    "enabled": false,
+    "url": "https://integrate.api.nvidia.com/v1/chat/completions",
+    "rate_limit": 0.1,
+    "concurrency": 1,
+    "env_key": "NIM_API_KEY",
+    "model": "minimaxai/minimax-m2.7",
+    "extra_options": {
+      "thinking": {
+        "type": "disabled"
+      }
+    }
+  },
+  "nim_deepseek-v3.2": {
+    "enabled": false,
+    "url": "https://integrate.api.nvidia.com/v1/chat/completions",
+    "rate_limit": 0.1,
+    "concurrency": 1,
+    "env_key": "NIM_API_KEY",
+    "model": "deepseek-ai/deepseek-v3.2",
+    "extra_options": {
+      "thinking": {
+        "type": "disabled"
+      }
+    }
+  },
+  "silicon_DeepSeek-R1-Distill-Qwen-7B": {
+    "enabled": true,
+    "url": "https://api.siliconflow.cn/v1/chat/completions",
+    "rate_limit": 1.0,
+    "concurrency": 1,
+    "env_key": "SILICONFLOW_API_KEY",
+    "model": "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
+    "extra_options": {
+      "thinking": {
+        "type": "disabled"
+      }
+    }
+  }
+}
