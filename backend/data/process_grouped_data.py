@@ -486,8 +486,6 @@ async def worker(name, platform_key, queue, client, db_conn):
             update_data["location_en"] = str(loc_name_en).strip()[:200] if loc_name_en else ""
             update_data["location_cn"] = str(loc_name_cn).strip()[:200] if loc_name_cn else ""
             
-            # 兼容旧字段 保持向下兼容
-            update_data["location"] = update_data["location_en"]
             
             # 经纬度严格范围校验
             try:
@@ -517,9 +515,6 @@ async def worker(name, platform_key, queue, client, db_conn):
             update_data["full_text_en"] = str(ai_result.get("full_text_en", "")).strip()
             update_data["full_text_cn"] = str(ai_result.get("full_text_cn", "")).strip()
             
-            # 兼容旧字段 保持向下兼容
-            update_data["title"] = update_data["title_en"]
-            update_data["full_text"] = update_data["full_text_en"]
             
             # 6. 写入数据库
             await update_grouped_news(db_conn, news_id, update_data)

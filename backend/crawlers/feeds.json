@@ -27,7 +27,7 @@
     {
         "source": "AFP",
         "rss_url": ["https://rsshub.rssforever.com/yahoo/news/provider/hk/afp.com.hk"],
-        "content_can_be_crawled": false,
+        "content_can_be_crawled": true,
         "authority": 10,
         "crawl": true
     },
