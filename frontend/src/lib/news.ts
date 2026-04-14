@@ -1,4 +1,4 @@
-export type NewsType = '政治' | '经济' | '科技' | '体育' | '文化'
+export type Lang = 'zh' | 'en'
 
 export type NewsItem = {
   id: string
@@ -9,7 +9,7 @@ export type NewsItem = {
   media: string
   continent: string
   country: string
-  type: NewsType
+  type: string
   heat: number
   lat: number
   lng: number
@@ -43,23 +43,33 @@ export type ChartData = {
 }
 
 const API_BASE = (import.meta.env.VITE_API_BASE ?? '').replace(/\/$/, '')
+const newsListCache = new Map<Lang, NewsItem[]>()
+const newsDetailCache = new Map<string, NewsDetail | null>()
 
 function apiUrl(path: string) {
   return `${API_BASE}${path}`
 }
 
-export async function fetchNewsList(): Promise<NewsItem[]> {
-  const res = await fetch(apiUrl('/api/news'))
+export async function fetchNewsList(lang: Lang = 'zh'): Promise<NewsItem[]> {
+  const cached = newsListCache.get(lang)
+  if (cached) return cached
+  const res = await fetch(apiUrl(`/api/news?lang=${lang}`))
   if (!res.ok) throw new Error(`获取新闻列表失败: ${res.status}`)
   const data = (await res.json()) as { items?: NewsItem[] }
-  return Array.isArray(data.items) ? data.items : []
+  const items = Array.isArray(data.items) ? data.items : []
+  newsListCache.set(lang, items)
+  return items
 }
 
-export async function fetchNewsById(id: string): Promise<NewsDetail | null> {
-  const res = await fetch(apiUrl(`/api/news/${id}`))
+export async function fetchNewsById(id: string, lang: Lang = 'zh'): Promise<NewsDetail | null> {
+  const cacheKey = `${lang}:${id}`
+  if (newsDetailCache.has(cacheKey)) return newsDetailCache.get(cacheKey) ?? null
+  const res = await fetch(apiUrl(`/api/news/${id}?lang=${lang}`))
   if (res.status === 404) return null
   if (!res.ok) throw new Error(`获取新闻详情失败: ${res.status}`)
-  return (await res.json()) as NewsDetail
+  const item = (await res.json()) as NewsDetail
+  newsDetailCache.set(cacheKey, item)
+  return item
 }
 
 function dayKey(ts: number) {
@@ -125,7 +135,7 @@ function make(
   media: string,
   continent: string,
   country: string,
-  type: NewsType,
+  type: string,
   heat: number,
   lat: number,
   lng: number,
@@ -169,7 +179,7 @@ const citySeeds = [
   { continent: '大洋洲', country: '新西兰', lat: -41.2865, lng: 174.7762 },
 ]
 
-const titles: Record<NewsType, string[]> = {
+const titles: Record<string, string[]> = {
   政治: ['峰会举行', '议会讨论', '外交会谈', '政策发布'],
   经济: ['数据公布', '市场波动', '投资增长', '贸易谈判'],
   科技: ['新品发布', '研发突破', '投资回暖', '产业合作'],
@@ -178,7 +188,7 @@ const titles: Record<NewsType, string[]> = {
 }
 
 const medias = ['新闻媒体', '环球观察', '今日快讯', '深度报道']
-const types: NewsType[] = ['政治', '经济', '科技', '体育', '文化']
+const types = ['政治', '经济', '科技', '体育', '文化']
 
 export const mockNews: NewsItem[] = Array.from({ length: 60 }).map((_, i) => {
   const seed = citySeeds[i % citySeeds.length]

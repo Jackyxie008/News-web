@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import type { NewsDetail } from '@/lib/news'
+import closeIcon from '@/assets/icon_x.svg'
 
 const props = defineProps<{
   visible: boolean
+  lang: 'zh' | 'en'
   detail: NewsDetail | null
 }>()
 
@@ -19,33 +21,35 @@ const emit = defineEmits<{
     <div class="flex h-full flex-col p-6">
       <div class="mb-4 flex items-start justify-between gap-4">
         <h2 class="break-words text-[34px] font-semibold leading-[1.2] text-black">
-          {{ props.detail?.title || '新闻标题' }}
+          {{ props.detail?.title || (props.lang === 'en' ? 'News Title' : '新闻标题') }}
         </h2>
         <button
-          class="inline-flex h-10 w-10 flex-none items-center justify-center rounded-md bg-black text-2xl leading-none text-white hover:opacity-90"
+          class="inline-flex h-8 w-8 flex-none items-center justify-center rounded-md bg-transparent hover:bg-zinc-100"
           type="button"
           aria-label="关闭"
           @click="emit('close')"
         >
-          ×
+          <img :src="closeIcon" alt="X" class="h-5 w-5" />
         </button>
       </div>
 
       <div class="flex-1 space-y-4 overflow-y-auto pr-1 text-black">
         <section>
-          <p class="mb-1 text-base font-medium">地点</p>
+          <p class="mb-1 text-base font-medium">{{ props.lang === 'en' ? 'Location' : '地点' }}</p>
           <p class="text-sm text-zinc-700">{{ props.detail?.location || props.detail?.country || '-' }}</p>
         </section>
 
         <section>
-          <p class="mb-1 text-base font-medium">发布时间</p>
+          <p class="mb-1 text-base font-medium">
+            {{ props.lang === 'en' ? 'Published At' : '发布时间' }}
+          </p>
           <p class="text-sm text-zinc-700">
             {{ props.detail?.published || props.detail?.date || '-' }}
           </p>
         </section>
 
         <section>
-          <p class="mb-2 text-base font-medium">关键字</p>
+          <p class="mb-2 text-base font-medium">{{ props.lang === 'en' ? 'Keywords' : '关键字' }}</p>
           <div class="flex flex-wrap gap-2">
             <span
               v-for="keyword in props.detail?.keywords || []"
@@ -64,19 +68,19 @@ const emit = defineEmits<{
         </section>
 
         <section>
-          <p class="mb-1 text-base font-medium">新闻类型</p>
+          <p class="mb-1 text-base font-medium">{{ props.lang === 'en' ? 'Category' : '新闻类型' }}</p>
           <p class="text-sm text-zinc-700">{{ props.detail?.newsType || props.detail?.type || '-' }}</p>
         </section>
 
         <section>
-          <p class="mb-1 text-base font-medium">正文</p>
+          <p class="mb-1 text-base font-medium">{{ props.lang === 'en' ? 'Content' : '正文' }}</p>
           <p class="whitespace-pre-wrap text-sm leading-6 text-zinc-700">
             {{ props.detail?.fullText?.trim() || props.detail?.summary || '-' }}
           </p>
         </section>
 
         <section>
-          <p class="mb-1 text-base font-medium">链接</p>
+          <p class="mb-1 text-base font-medium">{{ props.lang === 'en' ? 'Links' : '链接' }}</p>
           <div class="space-y-1">
             <a
               v-for="link in props.detail?.links || []"

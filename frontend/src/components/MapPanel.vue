@@ -1,27 +1,27 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
 import L from 'leaflet'
 import type { NewsItem } from '@/lib/news'
 
 const props = defineProps<{
   items: NewsItem[]
   selectedId: string | null
+  lang: 'zh' | 'en'
 }>()
 
 const emit = defineEmits<{ select: [news: NewsItem | null] }>()
 
-const router = useRouter()
-
 const mapRef = ref<HTMLDivElement | null>(null)
 const map = ref<L.Map | null>(null)
 const layer = ref<L.LayerGroup | null>(null)
+const tileLayer = ref<L.TileLayer | null>(null)
 const markerById = new Map<string, L.CircleMarker>()
 
 const selected = computed(() => props.items.find((n) => n.id === props.selectedId) ?? null)
 
 function googleTileUrl() {
-  return 'https://mt1.google.com/vt/lyrs=m&hl=zh-CN&gl=CN&x={x}&y={y}&z={z}'
+  const hl = props.lang === 'en' ? 'en' : 'zh-CN'
+  return `https://mt1.google.com/vt/lyrs=m&hl=${hl}&gl=CN&x={x}&y={y}&z={z}`
 }
 
 function markerStyle(active: boolean) {
@@ -59,29 +59,9 @@ function popupNode(n: NewsItem) {
   summary.style.fontSize = '12px'
   summary.style.lineHeight = '16px'
 
-  const actions = document.createElement('div')
-  actions.style.display = 'flex'
-  actions.style.gap = '8px'
-  actions.style.marginTop = '12px'
-
-  const btn = document.createElement('button')
-  btn.type = 'button'
-  btn.textContent = '查看详情'
-  btn.style.borderRadius = '10px'
-  btn.style.padding = '8px 10px'
-  btn.style.fontSize = '12px'
-  btn.style.fontWeight = '600'
-  btn.style.border = '1px solid #e4e4e7'
-  btn.style.background = '#111827'
-  btn.style.color = '#ffffff'
-  btn.style.cursor = 'pointer'
-  btn.addEventListener('click', () => router.push(`/news/${n.id}`))
-
-  actions.appendChild(btn)
   wrap.appendChild(title)
   wrap.appendChild(meta)
   wrap.appendChild(summary)
-  wrap.appendChild(actions)
   return wrap
 }
 
@@ -94,6 +74,8 @@ function renderMarkers() {
   for (const n of props.items) {
     const active = n.id === props.selectedId
     const m = L.circleMarker([n.lat, n.lng], markerStyle(active))
+    m.on('mouseover', () => m.openPopup())
+    m.on('mouseout', () => m.closePopup())
     m.on('click', () => emit('select', n))
     m.bindPopup(popupNode(n), { autoPan: true, closeButton: true })
     m.addTo(g)
@@ -125,13 +107,16 @@ onMounted(() => {
     center: [20, 0],
     zoom: 2,
     worldCopyJump: true,
+    preferCanvas: true,
     zoomControl: true,
   })
-  L.tileLayer(googleTileUrl(), {
+  const t = L.tileLayer(googleTileUrl(), {
     maxZoom: 18,
     minZoom: 2,
     attribution: '',
-  }).addTo(m)
+  })
+  t.addTo(m)
+  tileLayer.value = t
 
   m.on('click', () => emit('select', null))
   map.value = m
@@ -148,7 +133,6 @@ watch(
   () => {
     renderMarkers()
   },
-  { deep: true },
 )
 
 watch(
@@ -156,6 +140,13 @@ watch(
   () => {
     applySelectedStyle()
     focusSelected()
+  },
+)
+
+watch(
+  () => props.lang,
+  () => {
+    tileLayer.value?.setUrl(googleTileUrl(), false)
   },
 )
 </script>

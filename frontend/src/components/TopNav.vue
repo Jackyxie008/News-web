@@ -1,10 +1,13 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { List } from 'lucide-vue-next'
+import gTranslateIcon from '@/assets/g_translate.svg'
 import ResetButton from '@/components/ResetButton.vue'
 import SelectPill from '@/components/SelectPill.vue'
 import SearchPill from '@/components/SearchPill.vue'
 
 const props = defineProps<{
+  lang: 'zh' | 'en'
   query: string
   type: string | null
   media: string | null
@@ -18,6 +21,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
+  'update:lang': [value: 'zh' | 'en']
   'update:query': [value: string]
   'update:type': [value: string | null]
   'update:media': [value: string | null]
@@ -29,10 +33,21 @@ const emit = defineEmits<{
 
 function onMenu() {}
 
-const heatOptions: { label: string; value: string }[] = [
-  { label: '热度优先', value: 'hot' },
-  { label: '时间优先', value: 'time' },
-]
+const heatOptions = computed<{ label: string; value: string }[]>(() =>
+  props.lang === 'en'
+    ? [
+        { label: 'By Heat', value: 'hot' },
+        { label: 'By Time', value: 'time' },
+      ]
+    : [
+        { label: '热度优先', value: 'hot' },
+        { label: '时间优先', value: 'time' },
+      ],
+)
+
+function toggleLang() {
+  emit('update:lang', props.lang === 'zh' ? 'en' : 'zh')
+}
 </script>
 
 <template>
@@ -51,31 +66,31 @@ const heatOptions: { label: string; value: string }[] = [
 
       <SelectPill
         :model-value="props.type"
-        placeholder="新闻类型"
+        :placeholder="props.lang === 'en' ? 'Category' : '新闻类型'"
         :options="props.typeOptions"
         @update:model-value="(value) => emit('update:type', value)"
       />
       <SelectPill
         :model-value="props.media"
-        placeholder="新闻媒体"
+        :placeholder="props.lang === 'en' ? 'Media' : '新闻媒体'"
         :options="props.mediaOptions"
         @update:model-value="(value) => emit('update:media', value)"
       />
       <SelectPill
         :model-value="props.continent"
-        placeholder="大洲"
+        :placeholder="props.lang === 'en' ? 'Continent' : '大洲'"
         :options="props.continentOptions"
         @update:model-value="(value) => emit('update:continent', value)"
       />
       <SelectPill
         :model-value="props.country"
-        placeholder="国家/地区"
+        :placeholder="props.lang === 'en' ? 'Country/Region' : '国家/地区'"
         :options="props.countryOptions"
         @update:model-value="(value) => emit('update:country', value)"
       />
       <SelectPill
         :model-value="props.heat"
-        placeholder="热度"
+        :placeholder="props.lang === 'en' ? 'Sort' : '热度'"
         :options="heatOptions"
         @update:model-value="(value) => emit('update:heat', value as 'hot' | 'time' | null)"
       />
@@ -83,10 +98,19 @@ const heatOptions: { label: string; value: string }[] = [
       <div class="ml-auto w-[281px]">
         <SearchPill
           :model-value="props.query"
-          placeholder="搜索"
+          :placeholder="props.lang === 'en' ? 'Search' : '搜索'"
           @update:model-value="(value) => emit('update:query', value)"
         />
       </div>
+
+      <button
+        class="inline-flex h-9 w-9 items-center justify-center rounded-md bg-white/90 ring-1 ring-black/10 hover:bg-white"
+        type="button"
+        :aria-label="props.lang === 'en' ? 'Switch Language' : '切换语言'"
+        @click="toggleLang"
+      >
+        <img :src="gTranslateIcon" alt="g_translate" class="h-6 w-6" />
+      </button>
     </div>
   </header>
 </template>

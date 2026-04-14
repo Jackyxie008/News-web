@@ -9,7 +9,7 @@ from typing import Any
 
 DB_PATH = Path("backend/data/data.db")
 
-CATEGORY_MAP = {
+CATEGORY_MAP_ZH = {
     "politics": "政治",
     "finance": "经济",
     "tech": "科技",
@@ -19,6 +19,23 @@ CATEGORY_MAP = {
     "international": "国际",
     "disaster": "灾害",
 }
+
+CATEGORY_MAP_EN = {
+    "politics": "Politics",
+    "finance": "Finance",
+    "tech": "Tech",
+    "sports": "Sports",
+    "society": "Society",
+    "entertainment": "Entertainment/Culture",
+    "international": "International",
+    "disaster": "Disaster",
+}
+
+
+def normalize_lang(value: str | None) -> str:
+    if value and value.strip().lower() == "en":
+        return "en"
+    return "zh"
 
 
 def parse_ts(published: str) -> int:
@@ -40,12 +57,13 @@ def normalize_date(published: str) -> str:
     return text
 
 
-def extract_country(location: str) -> str:
+def extract_country(location: str, lang: str) -> str:
+    unknown = "Unknown" if lang == "en" else "未知地区"
     if not location:
-        return "未知地区"
+        return unknown
     parts = [part.strip() for part in location.split(",") if part.strip()]
     if not parts:
-        return "未知地区"
+        return unknown
     return parts[-1]
 
 
@@ -105,7 +123,7 @@ def extract_keywords_fallback(title: str, full_text: str) -> list[str]:
     return dedup
 
 
-def row_to_news(row: sqlite3.Row) -> dict[str, Any] | None:
+def row_to_news(row: sqlite3.Row, lang: str) -> dict[str, Any] | None:
     lat = row["latitude"]
     lng = row["longitude"]
     if lat is None or lng is None:
@@ -121,10 +139,24 @@ def row_to_news(row: sqlite3.Row) -> dict[str, Any] | None:
         return None
 
     category = (row["category"] or "").strip().lower()
-    title = row["title"] or row["primary_title"] or f"新闻 #{row['id']}"
-    full_text = row["full_text"] or row["primary_full_text"] or ""
-    location = row["location"] or ""
-    country = extract_country(location)
+    title = (
+        row["title_en"] if lang == "en" else row["title_cn"]
+    ) or (
+        row["title_cn"] if lang == "en" else row["title_en"]
+    ) or row["primary_title"] or (
+        f"News #{row['id']}" if lang == "en" else f"新闻 #{row['id']}"
+    )
+    full_text = (
+        row["full_text_en"] if lang == "en" else row["full_text_cn"]
+    ) or (
+        row["full_text_cn"] if lang == "en" else row["full_text_en"]
+    ) or row["primary_full_text"] or ""
+    location = (
+        row["location_en"] if lang == "en" else row["location_cn"]
+    ) or (
+        row["location_cn"] if lang == "en" else row["location_en"]
+    ) or ""
+    country = extract_country(location, lang)
     keywords = parse_keywords(row["keywords"] or "")
     if not keywords:
         keywords = extract_keywords_fallback(title, full_text)
@@ -132,22 +164,24 @@ def row_to_news(row: sqlite3.Row) -> dict[str, Any] | None:
     if not links and row["primary_link"]:
         links = [str(row["primary_link"]).strip()]
 
+    category_map = CATEGORY_MAP_EN if lang == "en" else CATEGORY_MAP_ZH
+
     return {
         "id": str(row["id"]),
         "title": title,
         "summary": summary_text(full_text),
         "date": normalize_date(row["published"] or ""),
         "ts": parse_ts(row["published"] or ""),
-        "media": row["media"] or "未知媒体",
-        "continent": "未知洲",
+        "media": row["media"] or ("Unknown Media" if lang == "en" else "未知媒体"),
+        "continent": "Unknown" if lang == "en" else "未知洲",
         "country": country,
-        "type": CATEGORY_MAP.get(category, "文化"),
+        "type": category_map.get(category, "Unknown" if lang == "en" else "文化"),
         "heat": calc_heat(row["news_id"] or ""),
         "lat": lat_value,
         "lng": lng_value,
         "location": location or country,
         "published": row["published"] or "",
-        "newsType": CATEGORY_MAP.get(category, "文化"),
+        "newsType": category_map.get(category, "Unknown" if lang == "en" else "文化"),
         "keywords": keywords,
         "fullText": full_text,
         "links": links,
@@ -160,17 +194,20 @@ def get_connection() -> sqlite3.Connection:
     return conn
 
 
-def fetch_news_list(limit: int = 1000) -> list[dict[str, Any]]:
+def fetch_news_list(limit: int = 1000, lang: str = "zh") -> list[dict[str, Any]]:
     with get_connection() as conn:
         rows = conn.execute(
             """
             SELECT
               g.id,
               g.news_id,
-              g.title,
-              g.full_text,
+              g.title_en,
+              g.title_cn,
+              g.full_text_en,
+              g.full_text_cn,
               g.published,
-              g.location,
+              g.location_en,
+              g.location_cn,
               g.latitude,
               g.longitude,
               g.category,
@@ -213,23 +250,26 @@ def fetch_news_list(limit: int = 1000) -> list[dict[str, Any]]:
 
     result: list[dict[str, Any]] = []
     for row in rows:
-        item = row_to_news(row)
+        item = row_to_news(row, lang)
         if item is not None:
             result.append(item)
     return result
 
 
-def fetch_news_detail(news_id: str) -> dict[str, Any] | None:
+def fetch_news_detail(news_id: str, lang: str = "zh") -> dict[str, Any] | None:
     with get_connection() as conn:
         row = conn.execute(
             """
             SELECT
               g.id,
               g.news_id,
-              g.title,
-              g.full_text,
+              g.title_en,
+              g.title_cn,
+              g.full_text_en,
+              g.full_text_cn,
               g.published,
-              g.location,
+              g.location_en,
+              g.location_cn,
               g.latitude,
               g.longitude,
               g.category,
@@ -272,7 +312,7 @@ def fetch_news_detail(news_id: str) -> dict[str, Any] | None:
 
     if row is None:
         return None
-    return row_to_news(row)
+    return row_to_news(row, lang)
 
 
 class ApiHandler(BaseHTTPRequestHandler):
@@ -305,7 +345,8 @@ class ApiHandler(BaseHTTPRequestHandler):
                 limit = int(query.get("limit", ["1000"])[0])
             except ValueError:
                 limit = 1000
-            items = fetch_news_list(limit=max(1, min(limit, 5000)))
+            lang = normalize_lang(query.get("lang", ["zh"])[0])
+            items = fetch_news_list(limit=max(1, min(limit, 5000)), lang=lang)
             self._write_json({"items": items})
             return
 
@@ -314,7 +355,9 @@ class ApiHandler(BaseHTTPRequestHandler):
             if not news_id:
                 self._write_json({"error": "参数错误"}, status=400)
                 return
-            item = fetch_news_detail(news_id)
+            query = parse_qs(parsed.query)
+            lang = normalize_lang(query.get("lang", ["zh"])[0])
+            item = fetch_news_detail(news_id, lang=lang)
             if item is None:
                 self._write_json({"error": "未找到该新闻"}, status=404)
                 return

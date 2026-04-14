@@ -2,10 +2,11 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import L from 'leaflet'
-import { fetchNewsById, type NewsItem } from '@/lib/news'
+import { fetchNewsById, type Lang, type NewsItem } from '@/lib/news'
 
 const route = useRoute()
 const router = useRouter()
+const lang = ref<Lang>((localStorage.getItem('lang') as Lang) === 'en' ? 'en' : 'zh')
 
 const id = computed(() => String(route.params.id || ''))
 const item = ref<NewsItem | null>(null)
@@ -14,11 +15,23 @@ const mapRef = ref<HTMLDivElement | null>(null)
 const map = ref<L.Map | null>(null)
 
 function googleTileUrl() {
-  return 'https://mt1.google.com/vt/lyrs=m&hl=zh-CN&gl=CN&x={x}&y={y}&z={z}'
+  const hl = lang.value === 'en' ? 'en' : 'zh-CN'
+  return `https://mt1.google.com/vt/lyrs=m&hl=${hl}&gl=CN&x={x}&y={y}&z={z}`
 }
 
 function onBack() {
   router.push('/')
+}
+
+const t = {
+  back: lang.value === 'en' ? 'Back' : '返回',
+  detail: lang.value === 'en' ? 'News Detail' : '新闻详情',
+  notFound: lang.value === 'en' ? 'News not found. Please go back to the home page.' : '未找到该新闻。你可以返回主页继续浏览。',
+  meta: lang.value === 'en' ? 'Metadata' : '元信息',
+  source: lang.value === 'en' ? 'Source' : '来源',
+  time: lang.value === 'en' ? 'Time' : '时间',
+  location: lang.value === 'en' ? 'Location' : '地点',
+  map: lang.value === 'en' ? 'Map' : '地图',
 }
 
 function renderMap() {
@@ -46,7 +59,7 @@ function renderMap() {
 
 async function loadItem() {
   try {
-    item.value = await fetchNewsById(id.value)
+    item.value = await fetchNewsById(id.value, lang.value)
   } catch (error) {
     console.error(error)
     item.value = null
@@ -76,41 +89,41 @@ watch(id, async () => {
         type="button"
         @click="onBack"
       >
-        返回
+        {{ t.back }}
       </button>
 
       <div class="mt-6 grid grid-cols-12 gap-6">
         <div class="col-span-12 rounded-2xl bg-zinc-950/70 p-6 ring-1 ring-zinc-800 lg:col-span-8">
-          <h1 class="text-lg font-semibold tracking-tight">{{ item?.title ?? '新闻详情' }}</h1>
+          <h1 class="text-lg font-semibold tracking-tight">{{ item?.title ?? t.detail }}</h1>
           <p class="mt-2 text-sm text-zinc-300">ID：{{ id }}</p>
           <div class="mt-6 space-y-3 text-sm text-zinc-200">
             <p>
-              {{ item?.summary ?? '未找到该新闻。你可以返回主页继续浏览。' }}
+              {{ item?.summary ?? t.notFound }}
             </p>
           </div>
         </div>
 
         <div class="col-span-12 space-y-6 lg:col-span-4">
           <div class="rounded-2xl bg-zinc-950/70 p-6 ring-1 ring-zinc-800">
-            <div class="text-sm font-semibold">元信息</div>
+            <div class="text-sm font-semibold">{{ t.meta }}</div>
             <div class="mt-4 space-y-2 text-sm text-zinc-300">
               <div class="flex items-center justify-between">
-                <span>来源</span>
+                <span>{{ t.source }}</span>
                 <span class="text-zinc-200">{{ item?.media ?? '-' }}</span>
               </div>
               <div class="flex items-center justify-between">
-                <span>时间</span>
+                <span>{{ t.time }}</span>
                 <span class="text-zinc-200">{{ item?.date ?? '-' }}</span>
               </div>
               <div class="flex items-center justify-between">
-                <span>地点</span>
+                <span>{{ t.location }}</span>
                 <span class="text-zinc-200">{{ item?.country ?? '-' }}</span>
               </div>
             </div>
           </div>
 
           <div class="rounded-2xl bg-zinc-950/70 p-6 ring-1 ring-zinc-800">
-            <div class="text-sm font-semibold">地图</div>
+            <div class="text-sm font-semibold">{{ t.map }}</div>
             <div ref="mapRef" class="mt-4 h-64 rounded-xl ring-1 ring-zinc-800" />
           </div>
         </div>
