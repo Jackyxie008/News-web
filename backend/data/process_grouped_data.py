@@ -519,7 +519,7 @@ async def worker(name, platform_key, queue, client, db_conn):
             # 6. 写入数据库
             await update_grouped_news(db_conn, news_id, update_data)
             
-            print(f"✅ [{name}] 完成 ID {news_id}: {loc_name} ({lat}, {lon})")
+            print(f"✅ [{name}] 完成 ID {news_id}: {loc_name_en} ({lat}, {lon})")
             
             # ✅ 处理成功，清理这条新闻的失败记录释放内存
             news_platform_failures.pop(news_id, None)
@@ -589,14 +589,20 @@ async def process_grouped_data(grouped_ids):
 
 async def process_all_unprocessed():
     """自动获取并处理所有未处理的分组 主入口"""
+    # ✅ 先单独查询待处理ID，然后关闭连接
+    # ❌ 绝对不能在持有数据库连接的情况下调用process_grouped_data
+    # 否则会导致双连接死锁，程序永远无法退出
+    ids = []
+    
     async with aiosqlite.connect(DB_PATH) as conn:
         ids = await get_all_unprocessed_ids(conn)
-        if ids:
-            print(f"发现 {len(ids)} 个未处理的新闻分组，开始处理...")
-            await process_grouped_data(ids)
-            print("✅ 所有分组数据处理完成！")
-        else:
-            print("没有需要处理的新分组")
+    
+    if ids:
+        print(f"发现 {len(ids)} 个未处理的新闻分组，开始处理...")
+        await process_grouped_data(ids)
+        print("\n✅ 所有分组数据处理完成！程序正常退出。")
+    else:
+        print("✅ 没有需要处理的新分组")
 
 if __name__ == "__main__":
     asyncio.run(process_all_unprocessed())
