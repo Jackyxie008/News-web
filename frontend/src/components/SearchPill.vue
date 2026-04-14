@@ -15,7 +15,7 @@ function onInput(e: Event) {
 
 <template>
   <div
-    class="flex h-[40px] w-[281px] items-center gap-2 overflow-hidden rounded-full bg-white px-4 py-3"
+    class="flex h-[40px] w-full max-w-[281px] items-center gap-2 overflow-hidden rounded-full border border-[#e5e7eb] bg-white px-4 py-3"
   >
     <input
       :value="props.modelValue"

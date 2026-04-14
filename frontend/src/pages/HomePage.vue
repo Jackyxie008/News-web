@@ -1,11 +1,10 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import TopNav from '@/components/TopNav.vue'
-import NewsListPanel from '@/components/NewsListPanel.vue'
 import MapPanel from '@/components/MapPanel.vue'
-import StatsPanel from '@/components/StatsPanel.vue'
-import { buildChartData, filterNews, mockNews, type FilterState, type NewsItem } from '@/lib/news'
+import { filterNews, mockNews, type FilterState, type NewsItem } from '@/lib/news'
 
+const selectedId = ref<string | null>(null)
 const filter = ref<FilterState>({
   query: '',
   country: null,
@@ -16,11 +15,30 @@ const filter = ref<FilterState>({
   timeRange: null,
 })
 
-const selectedId = ref<string | null>(null)
+const filteredItems = computed(() => filterNews(mockNews, filter.value))
 
-const filtered = computed(() => filterNews(mockNews, filter.value))
+const typeOptions = computed(() => {
+  const list = new Set(mockNews.map((n) => n.type))
+  return [...list].map((value) => ({ label: value, value }))
+})
+const mediaOptions = computed(() => {
+  const list = new Set(mockNews.map((n) => n.media))
+  return [...list].map((value) => ({ label: value, value }))
+})
+const continentOptions = computed(() => {
+  const list = new Set(mockNews.map((n) => n.continent))
+  return [...list].map((value) => ({ label: value, value }))
+})
+const countryOptions = computed(() => {
+  const list = new Set(mockNews.map((n) => n.country))
+  return [...list].map((value) => ({ label: value, value }))
+})
 
-const charts = computed(() => buildChartData(filtered.value))
+watch(filteredItems, (items) => {
+  if (!selectedId.value) return
+  const exists = items.some((n) => n.id === selectedId.value)
+  if (!exists) selectedId.value = null
+})
 
 function onSelectNews(news: NewsItem | null) {
   selectedId.value = news?.id ?? null
@@ -36,37 +54,32 @@ function onReset() {
     heat: null,
     timeRange: null,
   }
-  selectedId.value = null
-}
-
-function onUpdateFilter(next: FilterState) {
-  filter.value = next
 }
 </script>
 
 <template>
-  <div class="h-screen w-full bg-black">
-    <div class="grid h-full grid-rows-[61px_minmax(0,1fr)]">
-      <TopNav />
-      <div class="grid h-full grid-cols-[360px_minmax(0,1fr)_360px] bg-black">
-        <div class="h-full bg-[#d9d9d9]">
-          <NewsListPanel
-            :all-items="mockNews"
-            :filter="filter"
-            :items="filtered"
-            :selected-id="selectedId"
-            @reset="onReset"
-            @update:filter="onUpdateFilter"
-            @select="onSelectNews"
-          />
-        </div>
-        <div class="h-full bg-black">
-          <MapPanel :items="filtered" :selected-id="selectedId" @select="onSelectNews" />
-        </div>
-        <div class="h-full bg-[#d9d9d9]">
-          <StatsPanel :charts="charts" :filter="filter" @update:filter="onUpdateFilter" />
-        </div>
-      </div>
+  <main class="relative h-screen w-screen overflow-hidden bg-black">
+    <MapPanel :items="filteredItems" :selected-id="selectedId" @select="onSelectNews" />
+    <div class="absolute inset-x-0 top-0 z-[1000]">
+      <TopNav
+        :query="filter.query"
+        :type="filter.type"
+        :media="filter.media"
+        :continent="filter.continent"
+        :country="filter.country"
+        :heat="filter.heat"
+        :type-options="typeOptions"
+        :media-options="mediaOptions"
+        :continent-options="continentOptions"
+        :country-options="countryOptions"
+        @update:query="(value) => (filter.query = value)"
+        @update:type="(value) => (filter.type = value)"
+        @update:media="(value) => (filter.media = value)"
+        @update:continent="(value) => (filter.continent = value)"
+        @update:country="(value) => (filter.country = value)"
+        @update:heat="(value) => (filter.heat = value)"
+        @reset="onReset"
+      />
     </div>
-  </div>
+  </main>
 </template>

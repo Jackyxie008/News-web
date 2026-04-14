@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { ChevronDown } from 'lucide-vue-next'
 import { cn } from '@/lib/utils'
 
@@ -13,6 +13,7 @@ const props = defineProps<{
 const emit = defineEmits<{ 'update:modelValue': [value: string | null] }>()
 
 const open = ref(false)
+const rootRef = ref<HTMLElement | null>(null)
 
 const label = computed(() => {
   const current = props.options.find((o) => o.value === props.modelValue)
@@ -31,10 +32,26 @@ function onSelect(value: string | null) {
   emit('update:modelValue', value)
   close()
 }
+
+function onPointerDown(e: MouseEvent) {
+  if (!open.value) return
+  const root = rootRef.value
+  if (!root) return
+  if (root.contains(e.target as Node)) return
+  close()
+}
+
+onMounted(() => {
+  document.addEventListener('mousedown', onPointerDown)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('mousedown', onPointerDown)
+})
 </script>
 
 <template>
-  <div class="relative" @mouseleave="close">
+  <div ref="rootRef" class="relative">
     <button
       :class="
         cn(

@@ -15,7 +15,7 @@ const mapRef = ref<HTMLDivElement | null>(null)
 const map = ref<L.Map | null>(null)
 
 function googleTileUrl() {
-  return 'https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}'
+  return 'https://mt1.google.com/vt/lyrs=m&hl=zh-CN&gl=CN&x={x}&y={y}&z={z}'
 }
 
 function onBack() {

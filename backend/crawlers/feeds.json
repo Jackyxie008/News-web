@@ -8,7 +8,7 @@
                     ],
         "authority": 9,
         "content_can_be_crawled": true,
-        "crawl": false
+        "crawl": true
     },
     {
         "source": "AP",

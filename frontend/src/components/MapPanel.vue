@@ -21,7 +21,7 @@ const markerById = new Map<string, L.CircleMarker>()
 const selected = computed(() => props.items.find((n) => n.id === props.selectedId) ?? null)
 
 function googleTileUrl() {
-  return 'https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}'
+  return 'https://mt1.google.com/vt/lyrs=m&hl=zh-CN&gl=CN&x={x}&y={y}&z={z}'
 }
 
 function markerStyle(active: boolean) {

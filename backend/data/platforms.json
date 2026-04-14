@@ -68,7 +68,7 @@
     }
   },
   "silicon_DeepSeek-R1-0528-Qwen3-8B": {
-    "enabled": true,
+    "enabled": false,
     "url": "https://api.siliconflow.cn/v1/chat/completions",
     "rate_limit": 1.0,
     "concurrency": 2,
