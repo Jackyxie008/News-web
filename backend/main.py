@@ -18,8 +18,8 @@ print("开始对新闻进行聚类...")
 group_news()
 print("新闻聚类完成！")
 
-# print("开始处理聚类后的新闻数据...")
-# asyncio.run(process_all_unprocessed())
-# print("聚类数据处理完成！")
+print("开始处理聚类后的新闻数据...")
+asyncio.run(process_all_unprocessed())
+print("聚类数据处理完成！")
 
 print("main.py 执行完成！")

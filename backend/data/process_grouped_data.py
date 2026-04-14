@@ -273,7 +273,7 @@ async def worker(name, platform_key, queue, client, db_conn):
 
             # 2. 根据新闻数量选择不同Prompt
             if count == 1:
-                # 单条新闻：保留原标题，提炼干净内容，提取地点和关键词
+                # 单条新闻：保留原标题，提炼干净内容，提取地点和关键词，判断新闻类型
                 prompt = f"""
                 ### Role
                 You are a professional News Editor. Your task is to standardize news into a global GIS format.
@@ -287,6 +287,17 @@ async def worker(name, platform_key, queue, client, db_conn):
                     - NO EMPTY: Never return an empty string for location. If unknown, return the country name of the news origin.
                     - EXAMPLE: "Silicon Valley, California, USA" or "Paris, France" or just "Japan".
                 4. Extract 3-5 keywords in English.
+                5. Classify the news into ONE of the following categories: politics, disaster, finance, society, tech, entertainment, sports, international.
+
+                ### Category Definitions:
+                - politics: Government activities, policies, elections, political figures, legislation
+                - disaster: Natural disasters, accidents, emergencies, humanitarian crises
+                - finance: Economy, markets, business, trade, stocks, banking, corporate news
+                - society: Social issues, culture, education, health, lifestyle, community events
+                - tech: Technology, science, innovation, digital products, software, AI, space
+                - entertainment: Movies, music, celebrities, arts, media, shows, gaming
+                - sports: Athletic competitions, teams, athletes, scores, tournaments
+                - international: Cross-border relations, diplomacy, global affairs, foreign policy
 
                 ### CRITICAL: Language Requirement
                 Regardless of the input language, the output JSON fields MUST be in ENGLISH.
@@ -299,11 +310,12 @@ async def worker(name, platform_key, queue, client, db_conn):
                     "title": "The English title you created based on the original title",
                     "full_text": "The summarized news in English",
                     "location": "The single location name in English",
-                    "keywords": ["tag1", "tag2", "tag3"]
+                    "keywords": ["tag1", "tag2", "tag3"],
+                    "category": "one of: politics, disaster, finance, society, tech, entertainment, sports, international"
                 }}
                 """
             else:
-                # 多条新闻聚合：提炼标题、摘要、地点、关键词
+                # 多条新闻聚合：提炼标题、摘要、地点、关键词，判断新闻类型
                 prompt = f"""
                 ### Role
                 You are a senior News Synthesizer for a global news map.
@@ -318,6 +330,17 @@ async def worker(name, platform_key, queue, client, db_conn):
                     - NO EMPTY: Never return an empty string for location. If unknown, return the country name of the news origin.
                     - EXAMPLE: "Silicon Valley, California, USA" or "Paris, France" or just "Japan".
                 5. Extract 3-5 keywords in English.
+                6. Classify the news into ONE of the following categories: politics, disaster, finance, society, tech, entertainment, sports, international.
+
+                ### Category Definitions:
+                - politics: Government activities, policies, elections, political figures, legislation
+                - disaster: Natural disasters, accidents, emergencies, humanitarian crises
+                - finance: Economy, markets, business, trade, stocks, banking, corporate news
+                - society: Social issues, culture, education, health, lifestyle, community events
+                - tech: Technology, science, innovation, digital products, software, AI, space
+                - entertainment: Movies, music, celebrities, arts, media, shows, gaming
+                - sports: Athletic competitions, teams, athletes, scores, tournaments
+                - international: Cross-border relations, diplomacy, global affairs, foreign policy
 
                 ### CRITICAL: Language Requirement
                 Regardless of the input language, the output JSON fields MUST be in ENGLISH.
@@ -330,7 +353,8 @@ async def worker(name, platform_key, queue, client, db_conn):
                     "title": "The synthesized English title",
                     "full_text": "The synthesized English summary",
                     "location": "The single central location in English",
-                    "keywords": ["tag1", "tag2", "tag3"]
+                    "keywords": ["tag1", "tag2", "tag3"],
+                    "category": "one of: politics, disaster, finance, society, tech, entertainment, sports, international"
                 }}
                 """
 
@@ -450,6 +474,14 @@ async def worker(name, platform_key, queue, client, db_conn):
                 update_data["longitude"] = float(lon) if lon and -180 <= float(lon) <= 180 else None
             except (ValueError, TypeError):
                 update_data["longitude"] = None
+            
+            # 新闻类型
+            category = ai_result.get("category", "").strip().lower()
+            valid_categories = ["politics", "disaster", "finance", "society", "tech", "entertainment", "sports", "international"]
+            if category in valid_categories:
+                update_data["category"] = category
+            else:
+                update_data["category"] = None
             
             # 关键词 保证永远返回安全JSON
             update_data["keywords"] = json.dumps(ai_result.get("keywords", []), ensure_ascii=False)
