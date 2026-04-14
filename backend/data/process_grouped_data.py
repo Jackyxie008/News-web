@@ -300,19 +300,29 @@ async def worker(name, platform_key, queue, client, db_conn):
                 - international: Cross-border relations, diplomacy, global affairs, foreign policy
 
                 ### CRITICAL: Language Requirement
-                Regardless of the input language, the output JSON fields MUST be in ENGLISH.
+                Input news may be in Chinese OR English.
+                You MUST output BOTH high-quality English AND high-quality Chinese versions.
+                Do NOT simply translate one to the other.
+                Understand the core news facts first, then write natural native-quality content in BOTH languages independently.
+
+                If the original input is in Chinese: first write the perfect Chinese version, then write the English version.
+                If the original input is in English: first write the perfect English version, then write the Chinese version.
 
                 Input Title: {titles}
                 Input Content: {contents}
 
                 Return strictly in JSON format:
                 {{
-                    "title": "The English title you created based on the original title",
-                    "full_text": "The summarized news in English",
-                    "location": "The single location name in English",
+                    "title_en": "The English title you created based on the original title",
+                    "title_cn": "The same title translated to professional Chinese",
+                    "full_text_en": "The summarized news in English",
+                    "full_text_cn": "The same summary translated to professional Chinese",
+                    "location_en": "The single location name in English",
+                    "location_cn": "The same location name translated to professional Chinese",
                     "keywords": ["tag1", "tag2", "tag3"],
                     "category": "one of: politics, disaster, finance, society, tech, entertainment, sports, international"
                 }}
+                Return ONLY the raw JSON object. Do not include markdown code blocks, preamble, or any other text.
                 """
             else:
                 # 多条新闻聚合：提炼标题、摘要、地点、关键词，判断新闻类型
@@ -343,19 +353,29 @@ async def worker(name, platform_key, queue, client, db_conn):
                 - international: Cross-border relations, diplomacy, global affairs, foreign policy
 
                 ### CRITICAL: Language Requirement
-                Regardless of the input language, the output JSON fields MUST be in ENGLISH.
+                Input news may be in Chinese OR English.
+                You MUST output BOTH high-quality English AND high-quality Chinese versions.
+                Do NOT simply translate one to the other.
+                Understand the core news facts first, then write natural native-quality content in BOTH languages independently.
+
+                If the original input is in Chinese: first write the perfect Chinese version, then write the English version.
+                If the original input is in English: first write the perfect English version, then write the Chinese version.
 
                 Source Titles: {titles}
                 Source Contents: {contents}
 
                 Return strictly in JSON format:
                 {{
-                    "title": "The synthesized English title",
-                    "full_text": "The synthesized English summary",
-                    "location": "The single central location in English",
+                    "title_en": "The synthesized English title",
+                    "title_cn": "The same title translated to professional Chinese",
+                    "full_text_en": "The synthesized English summary",
+                    "full_text_cn": "The same summary translated to professional Chinese",
+                    "location_en": "The single central location in English",
+                    "location_cn": "The same location name translated to professional Chinese",
                     "keywords": ["tag1", "tag2", "tag3"],
                     "category": "one of: politics, disaster, finance, society, tech, entertainment, sports, international"
                 }}
+                Return ONLY the raw JSON object. Do not include markdown code blocks, preamble, or any other text.
                 """
 
             # 3. 调用 AI
@@ -455,14 +475,19 @@ async def worker(name, platform_key, queue, client, db_conn):
             ai_result = json.loads(cleaned_content)
             
             # 4. 获取坐标
-            loc_name = ai_result.get("location", "")
-            lat, lon = await get_coordinates(client, loc_name)
+            loc_name_en = ai_result.get("location_en", "")
+            loc_name_cn = ai_result.get("location_cn", "")
+            lat, lon = await get_coordinates(client, loc_name_en)
             
             # 5. 准备写入数据 严格类型校验
             update_data = {}
             
-            # 地点名称 截断防止超长
-            update_data["location"] = str(loc_name).strip()[:200] if loc_name else ""
+            # 双语地点名称 截断防止超长
+            update_data["location_en"] = str(loc_name_en).strip()[:200] if loc_name_en else ""
+            update_data["location_cn"] = str(loc_name_cn).strip()[:200] if loc_name_cn else ""
+            
+            # 兼容旧字段 保持向下兼容
+            update_data["location"] = update_data["location_en"]
             
             # 经纬度严格范围校验
             try:
@@ -486,15 +511,15 @@ async def worker(name, platform_key, queue, client, db_conn):
             # 关键词 保证永远返回安全JSON
             update_data["keywords"] = json.dumps(ai_result.get("keywords", []), ensure_ascii=False)
             
-            # 标题和正文
-            if count == 1:
-                # 单条新闻：使用AI生成的规范标题，以及清理后的内容
-                update_data["title"] = str(ai_result.get("title", titles)).strip()[:500]
-                update_data["full_text"] = str(ai_result.get("full_text", contents)).strip() if contents else ""
-            else:
-                # 多条新闻：AI生成全部字段
-                update_data["title"] = str(ai_result.get("title", "")).strip()[:500]
-                update_data["full_text"] = str(ai_result.get("full_text", "")).strip()
+            # 双语标题和正文
+            update_data["title_en"] = str(ai_result.get("title_en", "")).strip()[:500]
+            update_data["title_cn"] = str(ai_result.get("title_cn", "")).strip()[:500]
+            update_data["full_text_en"] = str(ai_result.get("full_text_en", "")).strip()
+            update_data["full_text_cn"] = str(ai_result.get("full_text_cn", "")).strip()
+            
+            # 兼容旧字段 保持向下兼容
+            update_data["title"] = update_data["title_en"]
+            update_data["full_text"] = update_data["full_text_en"]
             
             # 6. 写入数据库
             await update_grouped_news(db_conn, news_id, update_data)
