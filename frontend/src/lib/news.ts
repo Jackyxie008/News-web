@@ -15,6 +15,15 @@ export type NewsItem = {
   lng: number
 }
 
+export type NewsDetail = NewsItem & {
+  location: string
+  published: string
+  newsType: string
+  keywords: string[]
+  fullText: string
+  links: string[]
+}
+
 export type FilterState = {
   query: string
   country: string | null
@@ -31,6 +40,26 @@ export type LineDatum = { date: string; value: number }
 export type ChartData = {
   pie: PieDatum[]
   line: LineDatum[]
+}
+
+const API_BASE = (import.meta.env.VITE_API_BASE ?? '').replace(/\/$/, '')
+
+function apiUrl(path: string) {
+  return `${API_BASE}${path}`
+}
+
+export async function fetchNewsList(): Promise<NewsItem[]> {
+  const res = await fetch(apiUrl('/api/news'))
+  if (!res.ok) throw new Error(`获取新闻列表失败: ${res.status}`)
+  const data = (await res.json()) as { items?: NewsItem[] }
+  return Array.isArray(data.items) ? data.items : []
+}
+
+export async function fetchNewsById(id: string): Promise<NewsDetail | null> {
+  const res = await fetch(apiUrl(`/api/news/${id}`))
+  if (res.status === 404) return null
+  if (!res.ok) throw new Error(`获取新闻详情失败: ${res.status}`)
+  return (await res.json()) as NewsDetail
 }
 
 function dayKey(ts: number) {

@@ -1,15 +1,14 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import L from 'leaflet'
-import { mockNews } from '@/lib/news'
+import { fetchNewsById, type NewsItem } from '@/lib/news'
 
 const route = useRoute()
 const router = useRouter()
 
 const id = computed(() => String(route.params.id || ''))
-
-const item = computed(() => mockNews.find((n) => n.id === id.value) ?? null)
+const item = ref<NewsItem | null>(null)
 
 const mapRef = ref<HTMLDivElement | null>(null)
 const map = ref<L.Map | null>(null)
@@ -22,8 +21,10 @@ function onBack() {
   router.push('/')
 }
 
-onMounted(() => {
+function renderMap() {
   if (!mapRef.value) return
+  map.value?.remove()
+
   const center: [number, number] = item.value ? [item.value.lat, item.value.lng] : [20, 0]
   const zoom = item.value ? 4 : 2
   const m = L.map(mapRef.value, { center, zoom, zoomControl: true })
@@ -41,11 +42,29 @@ onMounted(() => {
       .openPopup()
   }
   map.value = m
+}
+
+async function loadItem() {
+  try {
+    item.value = await fetchNewsById(id.value)
+  } catch (error) {
+    console.error(error)
+    item.value = null
+  }
+  renderMap()
+}
+
+onMounted(async () => {
+  await loadItem()
 })
 
 onUnmounted(() => {
   map.value?.remove()
   map.value = null
+})
+
+watch(id, async () => {
+  await loadItem()
 })
 </script>
 

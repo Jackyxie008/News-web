@@ -1,8 +1,16 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import TopNav from '@/components/TopNav.vue'
 import MapPanel from '@/components/MapPanel.vue'
-import { filterNews, mockNews, type FilterState, type NewsItem } from '@/lib/news'
+import NewsDetailCard from '@/components/NewsDetailCard.vue'
+import {
+  fetchNewsById,
+  fetchNewsList,
+  filterNews,
+  type FilterState,
+  type NewsDetail,
+  type NewsItem,
+} from '@/lib/news'
 
 const selectedId = ref<string | null>(null)
 const filter = ref<FilterState>({
@@ -15,22 +23,24 @@ const filter = ref<FilterState>({
   timeRange: null,
 })
 
-const filteredItems = computed(() => filterNews(mockNews, filter.value))
+const allItems = ref<NewsItem[]>([])
+const filteredItems = computed(() => filterNews(allItems.value, filter.value))
+const selectedDetail = ref<NewsDetail | null>(null)
 
 const typeOptions = computed(() => {
-  const list = new Set(mockNews.map((n) => n.type))
+  const list = new Set(allItems.value.map((n) => n.type))
   return [...list].map((value) => ({ label: value, value }))
 })
 const mediaOptions = computed(() => {
-  const list = new Set(mockNews.map((n) => n.media))
+  const list = new Set(allItems.value.map((n) => n.media))
   return [...list].map((value) => ({ label: value, value }))
 })
 const continentOptions = computed(() => {
-  const list = new Set(mockNews.map((n) => n.continent))
+  const list = new Set(allItems.value.map((n) => n.continent))
   return [...list].map((value) => ({ label: value, value }))
 })
 const countryOptions = computed(() => {
-  const list = new Set(mockNews.map((n) => n.country))
+  const list = new Set(allItems.value.map((n) => n.country))
   return [...list].map((value) => ({ label: value, value }))
 })
 
@@ -44,6 +54,11 @@ function onSelectNews(news: NewsItem | null) {
   selectedId.value = news?.id ?? null
 }
 
+function onCloseDetail() {
+  selectedId.value = null
+  selectedDetail.value = null
+}
+
 function onReset() {
   filter.value = {
     query: '',
@@ -55,11 +70,34 @@ function onReset() {
     timeRange: null,
   }
 }
+
+onMounted(async () => {
+  try {
+    allItems.value = await fetchNewsList()
+  } catch (error) {
+    console.error(error)
+    allItems.value = []
+  }
+})
+
+watch(selectedId, async (id) => {
+  if (!id) {
+    selectedDetail.value = null
+    return
+  }
+  try {
+    selectedDetail.value = await fetchNewsById(id)
+  } catch (error) {
+    console.error(error)
+    selectedDetail.value = null
+  }
+})
 </script>
 
 <template>
   <main class="relative h-screen w-screen overflow-hidden bg-black">
     <MapPanel :items="filteredItems" :selected-id="selectedId" @select="onSelectNews" />
+    <NewsDetailCard :visible="Boolean(selectedId)" :detail="selectedDetail" @close="onCloseDetail" />
     <div class="absolute inset-x-0 top-0 z-[1000]">
       <TopNav
         :query="filter.query"
