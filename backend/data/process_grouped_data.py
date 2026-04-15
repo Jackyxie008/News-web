@@ -118,47 +118,70 @@ async def get_grouped_news(conn, id):
     
     return titles_text, contents_text, len(news_ids)
 
-async def get_coordinates(client, location):
-    """地理编码：带多级降级搜索 自动向上查找行政区"""
-    if not location: return None, None
+def generate_search_levels(location):
+    """生成单个地名的降级搜索队列"""
+    if not location: return []
     
-    # 生成分级搜索列表 从细到粗
-    search_levels = [location]
+    search_levels = []
     
-    # 按空格、逗号拆分地名 生成降级搜索项
-    parts = [p.strip() for p in location.replace(',', ' ').split() if p.strip()]
+    # 第一优先级：逗号分层降级
+    comma_parts = [p.strip() for p in location.split(',') if p.strip()]
+    for i in range(len(comma_parts)):
+        search_levels.append(', '.join(comma_parts[i:]))
     
-    # 方案 A: 去掉后面 (适合处理详细街道地址)
-    for i in range(len(parts)-1, 0, -1):
-        search_levels.append(' '.join(parts[:i]))
+    # 第二优先级：空格降级
+    space_parts = [p.strip() for p in location.replace(',', ' ').split() if p.strip()]
+    if len(space_parts) >= 2:
+        for i in range(1, len(space_parts)-1):
+            search_levels.append(' '.join(space_parts[i:]))
     
-    # 方案 B: 去掉前面 (适合处理 AI 幻觉词)
-    for i in range(1, len(parts)):
-        search_levels.append(' '.join(parts[i:]))
-    
-    # 去重保持顺序 避免重复搜索相同地名
+    # 去重保持顺序
     seen = set()
-    search_levels = [x for x in search_levels if not (x in seen or seen.add(x))]
+    return [x for x in search_levels if not (x in seen or seen.add(x))]
+
+
+async def get_coordinates(client, location_en, location_cn=None):
+    """地理编码：双语交叉搜索 同级先英后中 命中即返回"""
+    if not location_en and not location_cn:
+        return None, None
+    
+    # 生成各自降级队列
+    en_levels = generate_search_levels(location_en)
+    cn_levels = generate_search_levels(location_cn) if location_cn else []
+    
+    # ✅ 交叉合并：同一级别先试英文，再试中文
+    search_queue = []
+    max_levels = max(len(en_levels), len(cn_levels))
+    
+    for level in range(max_levels):
+        if level < len(en_levels):
+            search_queue.append( ("en", en_levels[level], level) )
+        if level < len(cn_levels) and cn_levels[level] != en_levels[level]:
+            search_queue.append( ("cn", cn_levels[level], level) )
     
     async with map_semaphore:
-        for level, query in enumerate(search_levels):
+        for lang, query, level in search_queue:
             try:
                 headers = {"User-Agent": "NewsMap/1.0"}
                 resp = await client.get(
                     "https://nominatim.openstreetmap.org/search",
-                    params={"q": query, "format": "json", "limit": 1},
+                    params={
+                        "q": query,
+                        "format": "json",
+                        "limit": 1,
+                        "accept-language": lang
+                    },
                     headers=headers,
                     timeout=15
                 )
-                await asyncio.sleep(1.1) # 严格遵守OSM使用协议 每秒最多1次请求
+                await asyncio.sleep(1.1)
                 
                 if resp.status_code == 403:
-                    print("\n\033[91m🚨 严重警告: OpenStreetMap API 返回403 你的IP已经被临时封禁！")
-                    print("🚨 请立即停止程序，至少等待2小时后再运行，否则封禁时间会延长\033[0m\n")
+                    print("\n\033[91m🚨 OpenStreetMap API 403 IP已被临时封禁\033[0m")
                     return None, None
                 
                 if resp.status_code == 429:
-                    print("\033[93m⚠️ OSM 请求频率超限 额外等待5秒\033[0m")
+                    print("\033[93m⚠️ OSM 请求频率超限 等待5秒\033[0m")
                     await asyncio.sleep(5)
                     continue
                 
@@ -168,15 +191,14 @@ async def get_coordinates(client, location):
                 data = resp.json()
                 if data:
                     if level > 0:
-                        print(f"\033[93m⚠️  地名降级匹配: '{location}' → '{query}'\033[0m")
+                        print(f"\033[93m⚠️  {lang.upper()} 降级匹配: '{query}' 第{level}级\033[0m")
                     return data[0]["lat"], data[0]["lon"]
                 
             except Exception as e:
-                print(f"\033[93m⚠️ 地理编码请求异常: {str(e)[:60]}\033[0m")
+                print(f"\033[93m⚠️ 地理编码异常: {str(e)[:60]}\033[0m")
                 continue
     
-    # 所有级别都搜索失败
-    print(f"\033[91m❌ 地名匹配失败: {location}\033[0m")
+    print(f"\033[91m❌ 地名匹配失败: {location_en}\033[0m")
     return None, None
 
 async def get_all_unprocessed_ids(conn):
@@ -276,108 +298,89 @@ async def worker(name, platform_key, queue, client, db_conn):
                 # 单条新闻：保留原标题，提炼干净内容，提取地点和关键词，判断新闻类型
                 prompt = f"""
                 ### Role
-                You are a professional News Editor. Your task is to standardize news into a global GIS format.
+                You are a professional News Editor and GIS Data Specialist. Your task is to standardize news into a global GIS format.
 
                 ### Task
-                1. Summarize the following news into a clean, fluent English passage (300-500 words).
-                2. Create an English title based on the original title.
-                3. Extract exactly ONE specific core location name in English.
-                    - CRITICAL: If no specific city is mentioned, use the most relevant Country or Province.
-                    - FORMAT: "City, Province/State, Country" (e.g., "Gaza City, Gaza Strip", "Austin, Texas, USA").
-                    - NO EMPTY: Never return an empty string for location. If unknown, return the country name of the news origin.
-                    - EXAMPLE: "Silicon Valley, California, USA" or "Paris, France" or just "Japan".
-                4. Extract 3-5 keywords in English.
-                5. Classify the news into ONE of the following categories: politics, disaster, finance, society, tech, entertainment, sports, international.
+                1. Summarize the following news into a clean, fluent passage (300-500 words).
+                2. Create professional titles in both English and Chinese.
+                3. **Spatial Entity Extraction (STRICT & CONCISE & ONE MAIN LOCATION ONLY)**:
+                    - **Granularity Priority**: Find the most specific location. Order: 1. Landmark -> 2. District -> 3. City -> 4. Province -> 5. Country.
+                    - **Minimalist Formatting**: Return a string from **Specific to General**. 
+                    - **Anti-Redundancy Rule (CRITICAL)**: 
+                        - DO NOT repeat names across levels. If a City is the same as the Province or Country (e.g., Singapore, Hong Kong, Gibraltar), return ONLY [Name, Higher-level-Country].
+                        - DO NOT "fill in" parent regions if they are already implied or identical to the specific location.
+                        - *Bad*: "United Kingdom, London, United Kingdom"
+                        - *Good*: "London, United Kingdom"
+                        - *Bad*: "Singapore, Singapore, Singapore"
+                        - *Good*: "Singapore"
+                    - **No Empty**: If unknown, use the news origin country only.
+                4. Extract 3-5 keywords and classify into ONE category: [politics, disaster, finance, society, tech, entertainment, sports, international].
 
-                ### Category Definitions:
-                - politics: Government activities, policies, elections, political figures, legislation
-                - disaster: Natural disasters, accidents, emergencies, humanitarian crises
-                - finance: Economy, markets, business, trade, stocks, banking, corporate news
-                - society: Social issues, culture, education, health, lifestyle, community events
-                - tech: Technology, science, innovation, digital products, software, AI, space
-                - entertainment: Movies, music, celebrities, arts, media, shows, gaming
-                - sports: Athletic competitions, teams, athletes, scores, tournaments
-                - international: Cross-border relations, diplomacy, global affairs, foreign policy
+                ### Language Requirement
+                - Input may be Chinese or English.
+                - Output MUST be high-quality, native-style content in BOTH languages. 
+                - Do NOT use machine translation; write each version independently.
 
-                ### CRITICAL: Language Requirement
-                Input news may be in Chinese OR English.
-                You MUST output BOTH high-quality English AND high-quality Chinese versions.
-                Do NOT simply translate one to the other.
-                Understand the core news facts first, then write natural native-quality content in BOTH languages independently.
+                Source Title: {titles}
+                Source Content: {contents}
 
-                If the original input is in Chinese: first write the perfect Chinese version, then write the English version.
-                If the original input is in English: first write the perfect English version, then write the Chinese version.
-
-                Input Title: {titles}
-                Input Content: {contents}
-
-                Return strictly in JSON format:
+                ### Output Format
+                Return ONLY a raw JSON object. No markdown, no preamble.
                 {{
-                    "title_en": "The English title you created based on the original title",
-                    "title_cn": "The same title translated to professional Chinese",
-                    "full_text_en": "The summarized news in English",
-                    "full_text_cn": "The same summary translated to professional Chinese",
-                    "location_en": "The single location name in English",
-                    "location_cn": "The same location name translated to professional Chinese",
-                    "keywords_en": ["tag1", "tag2", "tag3"],
-                    "keywords_cn": ["标签1", "标签2", "标签3"],
-                    "category": "one of: politics, disaster, finance, society, tech, entertainment, sports, international"
+                    "title_en": "English title",
+                    "title_cn": "中文标题",
+                    "full_text_en": "English summary",
+                    "full_text_cn": "中文摘要",
+                    "location_en": "Specific, General (e.g., 'Big Ben, London, UK' or just 'London, UK')",
+                    "location_cn": "具体, 总体 (例如：'大本钟, 伦敦, 英国' 或直接 '伦敦, 英国')",
+                    "keywords_en": ["tag1", "tag2"],
+                    "keywords_cn": ["标签1", "标签2"],
+                    "category": "category_name"
                 }}
-                Return ONLY the raw JSON object. Do not include markdown code blocks, preamble, or any other text.
                 """
             else:
                 # 多条新闻聚合：提炼标题、摘要、地点、关键词，判断新闻类型
                 prompt = f"""
                 ### Role
-                You are a senior News Synthesizer for a global news map.
+                You are a senior News Synthesizer and GIS Data Engineer for a global news map.
 
                 ### Task
-                1. Merge all provided news into ONE single, coherent English report.
-                2. Create a unified English Title.
-                3. Write a deep-summary passage in English (300-500 words), merging all facts from sources.
-                4. Extract exactly ONE specific core location name in English.
-                    - CRITICAL: If no specific city is mentioned, use the most relevant Country or Province.
-                    - FORMAT: "City, Province/State, Country" (e.g., "Gaza City, Gaza Strip", "Austin, Texas, USA").
-                    - NO EMPTY: Never return an empty string for location. If unknown, return the country name of the news origin.
-                    - EXAMPLE: "Silicon Valley, California, USA" or "Paris, France" or just "Japan".
-                5. Extract 3-5 keywords in English.
-                6. Classify the news into ONE of the following categories: politics, disaster, finance, society, tech, entertainment, sports, international.
+                1. **Fact Integration**: Merge all provided news sources into ONE single, coherent report.
+                2. **Unified Titles**: Create professional, high-quality titles in both English and Chinese.
+                3. **Deep Synthesis**: Write a detailed summary (300-500 words). Write natively in each language; do not translate literally.
+                4. **Spatial Entity Extraction (STRICT & CONCISE & ONE MAIN LOCATION ONLY)**:
+                    - **Granularity Priority**: Find the MOST SPECIFIC location possible. Priority: 1. Landmark -> 2. District -> 3. City -> 4. Province -> 5. Country.
+                    - **Standard Format**: "Specific Location, General Region, Country".
+                    - **Anti-Redundancy Rule (CRITICAL)**: 
+                        - DO NOT repeat names across levels. 
+                        - If a City is also a Country/Province (e.g., Singapore, Hong Kong), return only the name once.
+                        - *Bad*: "United Kingdom, London, United Kingdom"
+                        - *Good*: "London, United Kingdom"
+                        - *Bad*: "Singapore, Singapore"
+                        - *Good*: "Singapore"
+                    - **No Padding**: Do not add unnecessary administrative levels if they aren't explicitly required for clarity.
+                5. **Categorization**: Classify into ONE: [politics, disaster, finance, society, tech, entertainment, sports, international].
 
-                ### Category Definitions:
-                - politics: Government activities, policies, elections, political figures, legislation
-                - disaster: Natural disasters, accidents, emergencies, humanitarian crises
-                - finance: Economy, markets, business, trade, stocks, banking, corporate news
-                - society: Social issues, culture, education, health, lifestyle, community events
-                - tech: Technology, science, innovation, digital products, software, AI, space
-                - entertainment: Movies, music, celebrities, arts, media, shows, gaming
-                - sports: Athletic competitions, teams, athletes, scores, tournaments
-                - international: Cross-border relations, diplomacy, global affairs, foreign policy
-
-                ### CRITICAL: Language Requirement
-                Input news may be in Chinese OR English.
-                You MUST output BOTH high-quality English AND high-quality Chinese versions.
-                Do NOT simply translate one to the other.
-                Understand the core news facts first, then write natural native-quality content in BOTH languages independently.
-
-                If the original input is in Chinese: first write the perfect Chinese version, then write the English version.
-                If the original input is in English: first write the perfect English version, then write the Chinese version.
+                ### Language Requirement
+                - Output MUST contain both high-quality English and Chinese. 
+                - Ensure the journalistic tone is professional and natural in both cultures.
 
                 Source Titles: {titles}
                 Source Contents: {contents}
 
-                Return strictly in JSON format:
+                ### Output Format (STRICT JSON)
+                Return ONLY the raw JSON object. No markdown code blocks, preamble, or any other text.
                 {{
-                    "title_en": "The synthesized English title",
-                    "title_cn": "The same title translated to professional Chinese",
-                    "full_text_en": "The synthesized English summary",
-                    "full_text_cn": "The same summary translated to professional Chinese",
-                    "location_en": "The single central location in English",
-                    "location_cn": "The same location name translated to professional Chinese",
+                    "title_en": "Professional English title",
+                    "title_cn": "专业中文标题",
+                    "full_text_en": "Deep English summary...",
+                    "full_text_cn": "深度中文摘要...",
+                    "location_en": "Most specific location, Country (e.g., 'Big Ben, London, UK')",
+                    "location_cn": "最具体地点, 国家 (例如：'大本钟, 伦敦, 英国')",
                     "keywords_en": ["tag1", "tag2", "tag3"],
                     "keywords_cn": ["标签1", "标签2", "标签3"],
-                    "category": "one of: politics, disaster, finance, society, tech, entertainment, sports, international"
+                    "category": "category_name"
                 }}
-                Return ONLY the raw JSON object. Do not include markdown code blocks, preamble, or any other text.
                 """
 
             # 3. 调用 AI
@@ -476,10 +479,10 @@ async def worker(name, platform_key, queue, client, db_conn):
             cleaned_content = clean_json_response(raw_content)
             ai_result = json.loads(cleaned_content)
             
-            # 4. 获取坐标
+            # 4. 获取坐标 双语交叉搜索
             loc_name_en = ai_result.get("location_en", "")
             loc_name_cn = ai_result.get("location_cn", "")
-            lat, lon = await get_coordinates(client, loc_name_en)
+            lat, lon = await get_coordinates(client, loc_name_en, loc_name_cn)
             
             # 5. 准备写入数据 严格类型校验
             update_data = {}
@@ -611,5 +614,5 @@ if __name__ == "__main__":
     # asyncio.run(process_all_unprocessed())
 
     # 临时测试代码
-    ids = [i for i in range(41, 61)] 
+    ids = [i for i in range(21, 41)]
     asyncio.run(process_grouped_data(ids))

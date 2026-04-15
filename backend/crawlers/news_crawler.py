@@ -65,8 +65,8 @@ async def fetch(session, url):
         str: 网页 HTML 内容，失败返回 None
     """
     try:
-        # 设置 20 秒超时，使用自定义 User-Agent
-        async with session.get(url, timeout=20, headers={
+        # 设置 45 秒超时，使用自定义 User-Agent
+        async with session.get(url, timeout=45, headers={
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,webp,*/*;q=0.8"}) as resp:
             if resp.status != 200:
@@ -99,9 +99,10 @@ async def process_entry(session, entry, source, authority):
         return None
 
     # 使用 trafilatura 提取网页正文内容（自动去除广告、导航等噪音）
-    # 两种方式：直接从 URL 获取或从已下载的 HTML 提取
-    downloaded = trafilatura.fetch_url(link)  # 从 URL 直接获取
-    text = trafilatura.extract(downloaded or html)  # 提取正文
+    # 直接使用已经下载好的HTML，避免重复下载和同步阻塞
+    loop = asyncio.get_running_loop()
+    # 将CPU密集型的提取操作放到线程池执行，不阻塞事件循环
+    text = await loop.run_in_executor(None, trafilatura.extract, html)
 
     # 在 summary_text 中提取图片链接
     summary_text = entry.get("summary") or entry.get("description")
@@ -243,34 +244,37 @@ async def crawler():
                         "all_items": []
                     }
 
-        # 将所有任务分成每组5个的批次
-        for i in range(0, len(all_tasks), 5):
-            batch_tasks = all_tasks[i:i+5]  # 取当前批次的5个任务
-            print(f"处理第 {i//5 + 1} 批 RSS 源，共 {len(batch_tasks)} 个")
-            
-            # 并发执行当前批次的所有RSS源爬取（不分报社）
-            results = await asyncio.gather(*batch_tasks, return_exceptions=True)
-            
-            # 处理结果，按source分组
-            for result in results:
-                if not isinstance(result, Exception) and result:
-                    # 根据source将结果分组
-                    for item in result:
-                        source = item.get("source")
-                        if source in source_configs:
-                            source_configs[source]["all_items"].append(item)
-            
-            # 去重
-            for source, config in source_configs.items():
-                all_items = config["all_items"]
-                if all_items:  # 只有当有新闻时才去重
-                    unique_items, duplicates_count = deduplicate_news_list(all_items)
-                    if duplicates_count > 0:
-                        config["all_items"] = unique_items
-            
-            # 如果不是最后一批，添加延迟
-            if i + 5 < len(all_tasks):
-                await asyncio.sleep(1)  # 批次间延迟1秒
+        # 使用Semaphore限制最大并发数为5，动态并发控制
+        sem = asyncio.Semaphore(5)
+        
+        async def bounded_task(task_func):
+            async with sem:
+                return await task_func
+        
+        # 包装所有任务 加入并发限制
+        bounded_tasks = [bounded_task(task) for task in all_tasks]
+        
+        print(f"开始爬取，共 {len(bounded_tasks)} 个RSS源，最大并发数: 5")
+        
+        # 一次性启动所有任务，信号量自动控制并发数量
+        results = await asyncio.gather(*bounded_tasks, return_exceptions=True)
+        
+        # 处理所有结果 按source分组
+        for result in results:
+            if not isinstance(result, Exception) and result:
+                for item in result:
+                    source = item.get("source")
+                    if source in source_configs:
+                        source_configs[source]["all_items"].append(item)
+        
+        # 全局去重
+        for source, config in source_configs.items():
+            all_items = config["all_items"]
+            if all_items:
+                unique_items, duplicates_count = deduplicate_news_list(all_items)
+                if duplicates_count > 0:
+                    config["all_items"] = unique_items
+                    print(f"{source} 去重: 移除 {duplicates_count} 条重复新闻")
 
         # 保存每个source的结果
         for source, config in source_configs.items():
