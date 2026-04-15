@@ -29,7 +29,7 @@
     }
   },
   "nim_minimax-m2.7": {
-    "enabled": true,
+    "enabled": false,
     "url": "https://integrate.api.nvidia.com/v1/chat/completions",
     "rate_limit": 0.1,
     "concurrency": 1,

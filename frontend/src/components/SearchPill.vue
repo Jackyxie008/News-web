@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Search } from 'lucide-vue-next'
+import { Search, X } from 'lucide-vue-next'
 
 const props = defineProps<{
   modelValue: string
@@ -10,6 +10,10 @@ const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
 
 function onInput(e: Event) {
   emit('update:modelValue', (e.target as HTMLInputElement).value)
+}
+
+function clearInput() {
+  emit('update:modelValue', '')
 }
 </script>
 
@@ -24,6 +28,15 @@ function onInput(e: Event) {
       type="text"
       @input="onInput"
     />
+    <button
+      class="flex items-center justify-center p-0.5"
+      :class="props.modelValue ? 'opacity-100' : 'opacity-40'"
+      type="button"
+      aria-label="清除"
+      @click="clearInput"
+    >
+      <X class="h-3 w-3 text-zinc-900" />
+    </button>
     <div class="flex items-center justify-center p-0.5">
       <Search class="h-3 w-3 text-zinc-900" />
     </div>

@@ -12,6 +12,7 @@ import {
   type NewsDetail,
   type NewsItem,
 } from '@/lib/news'
+import { CONTINENTS_EN, CONTINENTS_ZH, getAllCountryOptions } from '@/lib/geo'
 
 const selectedId = ref<string | null>(null)
 const lang = ref<Lang>((localStorage.getItem('lang') as Lang) === 'en' ? 'en' : 'zh')
@@ -33,23 +34,12 @@ const typeOptions = computed(() => {
   const list = new Set(allItems.value.map((n) => n.type))
   return [...list].map((value) => ({ label: value, value }))
 })
-const mediaOptions = computed(() => {
-  const list = new Set(allItems.value.map((n) => n.media))
-  return [...list].map((value) => ({ label: value, value }))
-})
 const continentOptions = computed(() => {
-  const list = new Set(allItems.value.map((n) => n.continent))
-  return [...list].map((value) => ({ label: value, value }))
+  const values = lang.value === 'en' ? CONTINENTS_EN : CONTINENTS_ZH
+  return values.map((value) => ({ label: value, value }))
 })
 const countryOptions = computed(() => {
-  const list = new Set(allItems.value.map((n) => n.country))
-  return [...list].map((value) => ({ label: value, value }))
-})
-
-watch(filteredItems, (items) => {
-  if (!selectedId.value) return
-  const exists = items.some((n) => n.id === selectedId.value)
-  if (!exists) selectedId.value = null
+  return getAllCountryOptions(lang.value)
 })
 
 function onSelectNews(news: NewsItem | null) {
@@ -101,6 +91,15 @@ watch(selectedId, async (id) => {
 
 watch(lang, async (nextLang) => {
   localStorage.setItem('lang', nextLang)
+  // 防止中英文切换后旧语言筛选值导致结果为空
+  filter.value = {
+    ...filter.value,
+    type: null,
+    continent: null,
+    country: null,
+    media: null,
+    heat: null,
+  }
   try {
     allItems.value = await fetchNewsList(nextLang)
   } catch (error) {
@@ -134,21 +133,16 @@ watch(lang, async (nextLang) => {
         :lang="lang"
         :query="filter.query"
         :type="filter.type"
-        :media="filter.media"
         :continent="filter.continent"
         :country="filter.country"
-        :heat="filter.heat"
         :type-options="typeOptions"
-        :media-options="mediaOptions"
         :continent-options="continentOptions"
         :country-options="countryOptions"
         @update:lang="onChangeLang"
         @update:query="(value) => (filter.query = value)"
         @update:type="(value) => (filter.type = value)"
-        @update:media="(value) => (filter.media = value)"
         @update:continent="(value) => (filter.continent = value)"
         @update:country="(value) => (filter.country = value)"
-        @update:heat="(value) => (filter.heat = value)"
         @reset="onReset"
       />
     </div>

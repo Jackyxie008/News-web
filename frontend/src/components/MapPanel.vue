@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import L from 'leaflet'
+import 'leaflet.markercluster'
 import type { NewsItem } from '@/lib/news'
 
 const props = defineProps<{
@@ -13,9 +14,10 @@ const emit = defineEmits<{ select: [news: NewsItem | null] }>()
 
 const mapRef = ref<HTMLDivElement | null>(null)
 const map = ref<L.Map | null>(null)
-const layer = ref<L.LayerGroup | null>(null)
+const layer = ref<L.MarkerClusterGroup | null>(null)
 const tileLayer = ref<L.TileLayer | null>(null)
-const markerById = new Map<string, L.CircleMarker>()
+const markerById = new Map<string, L.Marker>()
+const markerToNews = new WeakMap<L.Marker, NewsItem>()
 
 const selected = computed(() => props.items.find((n) => n.id === props.selectedId) ?? null)
 
@@ -24,14 +26,22 @@ function googleTileUrl() {
   return `https://mt1.google.com/vt/lyrs=m&hl=${hl}&gl=CN&x={x}&y={y}&z={z}`
 }
 
-function markerStyle(active: boolean) {
-  return {
-    radius: active ? 7 : 5,
-    weight: active ? 3 : 2,
-    color: active ? '#ffffff' : '#e5e7eb',
-    fillColor: active ? '#ef4444' : '#22c55e',
-    fillOpacity: 0.95,
-  }
+function markerIcon(active: boolean) {
+  const dot = active ? 10 : 8
+  const halo = active ? 22 : 18
+  const bg = active ? '#dc2626' : '#ef4444'
+  const haloBg = active ? 'rgba(220, 38, 38, 0.28)' : 'rgba(239, 68, 68, 0.22)'
+  return L.divIcon({
+    className: 'news-marker-icon',
+    html: `
+      <span style="position:relative;display:block;width:${halo}px;height:${halo}px;">
+        <span style="position:absolute;inset:0;border-radius:9999px;background:${haloBg};"></span>
+        <span style="position:absolute;left:50%;top:50%;width:${dot}px;height:${dot}px;transform:translate(-50%,-50%);border-radius:9999px;background:${bg};box-shadow:0 0 0 1px rgba(255,255,255,0.85);"></span>
+      </span>
+    `,
+    iconSize: [halo, halo],
+    iconAnchor: [Math.round(halo / 2), Math.round(halo / 2)],
+  })
 }
 
 function popupNode(n: NewsItem) {
@@ -65,30 +75,184 @@ function popupNode(n: NewsItem) {
   return wrap
 }
 
+function clusterPopupNode(cluster: L.MarkerCluster) {
+  const wrap = document.createElement('div')
+  wrap.style.width = '300px'
+  wrap.style.fontFamily = 'ui-sans-serif, system-ui'
+
+  const title = document.createElement('div')
+  title.textContent = props.lang === 'en' ? `News (${cluster.getChildCount()})` : `新闻 (${cluster.getChildCount()})`
+  title.style.fontWeight = '700'
+  title.style.fontSize = '13px'
+  title.style.marginBottom = '8px'
+  wrap.appendChild(title)
+
+  const list = document.createElement('div')
+  list.style.maxHeight = '220px'
+  list.style.overflowY = 'auto'
+  list.style.display = 'flex'
+  list.style.flexDirection = 'column'
+  list.style.gap = '4px'
+
+  const childMarkers = cluster.getAllChildMarkers() as L.Marker[]
+  for (const marker of childMarkers) {
+    const news = markerToNews.get(marker)
+    if (!news) continue
+
+    const btn = document.createElement('button')
+    btn.type = 'button'
+    btn.style.width = '100%'
+    btn.style.textAlign = 'left'
+    btn.style.padding = '6px 8px'
+    btn.style.borderRadius = '8px'
+    btn.style.border = '0'
+    btn.style.cursor = 'pointer'
+    btn.style.background = 'rgba(244, 244, 245, 0.9)'
+    btn.onmouseenter = () => {
+      btn.style.background = 'rgba(228, 228, 231, 0.95)'
+    }
+    btn.onmouseleave = () => {
+      btn.style.background = 'rgba(244, 244, 245, 0.9)'
+    }
+
+    const titleText = document.createElement('div')
+    titleText.textContent = news.title
+    titleText.style.fontSize = '12px'
+    titleText.style.lineHeight = '16px'
+    titleText.style.fontWeight = '700'
+    titleText.style.color = '#18181b'
+
+    const dateText = document.createElement('div')
+    const dateLabel = props.lang === 'en' ? 'Published' : '发布时间'
+    dateText.textContent = `${dateLabel}: ${news.date || '-'}`
+    dateText.style.marginTop = '2px'
+    dateText.style.fontSize = '11px'
+    dateText.style.lineHeight = '14px'
+    dateText.style.color = '#71717a'
+
+    btn.appendChild(titleText)
+    btn.appendChild(dateText)
+
+    btn.onclick = () => {
+      emit('select', news)
+    }
+    list.appendChild(btn)
+  }
+
+  if (!list.childElementCount) {
+    const empty = document.createElement('div')
+    empty.textContent = props.lang === 'en' ? 'No news' : '暂无新闻'
+    empty.style.fontSize = '12px'
+    empty.style.color = '#71717a'
+    list.appendChild(empty)
+  }
+
+  wrap.appendChild(list)
+  return wrap
+}
+
+function openClusterPopup(cluster: L.MarkerCluster) {
+  const content = clusterPopupNode(cluster)
+  if (cluster.getPopup()) {
+    cluster.setPopupContent(content)
+  } else {
+    cluster.bindPopup(content, {
+      autoPan: true,
+      closeButton: true,
+      maxWidth: 340,
+      closeOnClick: false,
+      autoClose: false,
+      className: 'cluster-news-popup',
+    })
+  }
+  cluster.openPopup()
+}
+
+function normalizeCoords(lat: number, lng: number): [number, number] | null {
+  const latOk = lat >= -90 && lat <= 90
+  const lngOk = lng >= -180 && lng <= 180
+  if (latOk && lngOk) return [lat, lng]
+
+  // 部分数据可能经纬度写反：尝试自动纠偏
+  const swappedLatOk = lng >= -90 && lng <= 90
+  const swappedLngOk = lat >= -180 && lat <= 180
+  if (swappedLatOk && swappedLngOk) return [lng, lat]
+
+  return null
+}
+
 function renderMarkers() {
   if (!map.value) return
   if (layer.value) layer.value.remove()
   markerById.clear()
 
-  const g = L.layerGroup()
+  const g = L.markerClusterGroup({
+    showCoverageOnHover: false,
+    maxClusterRadius: 50,
+    zoomToBoundsOnClick: false,
+    spiderfyOnMaxZoom: false,
+    chunkedLoading: true,
+    chunkInterval: 120,
+    chunkDelay: 30,
+    removeOutsideVisibleBounds: true,
+    animate: false,
+    animateAddingMarkers: false,
+    iconCreateFunction(cluster) {
+      const count = cluster.getChildCount()
+      const clamped = Math.min(200, Math.max(1, count))
+      const scale = Math.log10(clamped + 1)
+      const dot = Math.round(16 + scale * 10) // 16 ~ 39
+      const halo = dot + 14
+      const fontSize = Math.round(Math.max(12, dot * 0.42))
+      return L.divIcon({
+        className: 'news-cluster-icon',
+        html: `
+          <div class="news-cluster-wrap" style="width:${halo}px;height:${halo}px;">
+            <span class="news-cluster-halo"></span>
+            <span class="news-cluster-dot" style="width:${dot}px;height:${dot}px;font-size:${fontSize}px;">${count}</span>
+          </div>
+        `,
+        iconSize: [halo, halo],
+      })
+    },
+  })
+
   for (const n of props.items) {
+    const normalized = normalizeCoords(n.lat, n.lng)
+    if (!normalized) continue
     const active = n.id === props.selectedId
-    const m = L.circleMarker([n.lat, n.lng], markerStyle(active))
-    m.on('mouseover', () => m.openPopup())
-    m.on('mouseout', () => m.closePopup())
-    m.on('click', () => emit('select', n))
-    m.bindPopup(popupNode(n), { autoPan: true, closeButton: true })
-    m.addTo(g)
+    const m = L.marker(normalized, { icon: markerIcon(active), keyboard: false })
+    m.on('click', () => {
+      emit('select', n)
+      m.openPopup()
+    })
+    m.bindPopup(popupNode(n), {
+      autoPan: true,
+      closeButton: true,
+      closeOnClick: false,
+      autoClose: false,
+      className: 'single-news-popup',
+    })
+    g.addLayer(m)
     markerById.set(n.id, m)
+    markerToNews.set(m, n)
   }
-  g.addTo(map.value)
+
+  g.on('clusterclick', (event: L.LeafletEvent & { layer: L.MarkerCluster; originalEvent?: MouseEvent }) => {
+    event.originalEvent?.preventDefault()
+    event.originalEvent?.stopPropagation()
+    const cluster = event.layer
+    openClusterPopup(cluster)
+  })
+
+  map.value.addLayer(g)
   layer.value = g
 }
 
 function applySelectedStyle() {
   for (const [id, m] of markerById) {
     const active = id === props.selectedId
-    m.setStyle(markerStyle(active))
+    m.setIcon(markerIcon(active))
   }
 }
 
@@ -97,7 +261,7 @@ function focusSelected() {
   if (!selected.value) return
   const m = markerById.get(selected.value.id)
   if (!m) return
-  map.value.panTo([selected.value.lat, selected.value.lng], { animate: true, duration: 0.25 })
+  map.value.panTo(m.getLatLng(), { animate: true, duration: 0.25 })
   m.openPopup()
 }
 
@@ -108,7 +272,7 @@ onMounted(() => {
     zoom: 2,
     worldCopyJump: true,
     preferCanvas: true,
-    zoomControl: true,
+    zoomControl: false,
   })
   const t = L.tileLayer(googleTileUrl(), {
     maxZoom: 18,
@@ -117,8 +281,8 @@ onMounted(() => {
   })
   t.addTo(m)
   tileLayer.value = t
+  L.control.zoom({ position: 'bottomleft' }).addTo(m)
 
-  m.on('click', () => emit('select', null))
   map.value = m
   renderMarkers()
 })
@@ -156,3 +320,38 @@ watch(
     <div ref="mapRef" class="h-full w-full bg-black" />
   </div>
 </template>
+
+<style>
+.news-cluster-icon {
+  background: transparent;
+  border: 0;
+}
+
+.news-cluster-wrap {
+  position: relative;
+  display: block;
+}
+
+.news-cluster-halo {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background: rgba(239, 68, 68, 0.24);
+}
+
+.news-cluster-dot {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  background: #dc2626;
+  color: #ffffff;
+  line-height: 1;
+  font-weight: 700;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.88), 0 6px 16px rgba(0, 0, 0, 0.28);
+}
+</style>

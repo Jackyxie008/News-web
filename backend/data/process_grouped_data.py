@@ -608,4 +608,8 @@ async def process_all_unprocessed():
         print("✅ 没有需要处理的新分组")
 
 if __name__ == "__main__":
-    asyncio.run(process_all_unprocessed())
+    # asyncio.run(process_all_unprocessed())
+
+    # 临时测试代码
+    ids = [i for i in range(41, 61)] 
+    asyncio.run(process_grouped_data(ids))

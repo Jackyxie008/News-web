@@ -1,3 +1,5 @@
+import { isIn } from '@rapideditor/country-coder'
+
 export type Lang = 'zh' | 'en'
 
 export type NewsItem = {
@@ -45,6 +47,7 @@ export type ChartData = {
 const API_BASE = (import.meta.env.VITE_API_BASE ?? '').replace(/\/$/, '')
 const newsListCache = new Map<Lang, NewsItem[]>()
 const newsDetailCache = new Map<string, NewsDetail | null>()
+const countryByCoordCache = new Map<string, boolean>()
 
 function apiUrl(path: string) {
   return `${API_BASE}${path}`
@@ -86,9 +89,35 @@ function contains(haystack: string, needle: string) {
   return haystack.toLowerCase().includes(q)
 }
 
+function isPointInCountry(code: string, lat: number, lng: number, id: string) {
+  const cacheKey = `${code}|${id}`
+  const cached = countryByCoordCache.get(cacheKey)
+  if (cached !== undefined) return cached
+
+  let result = false
+  if (Number.isFinite(lat) && Number.isFinite(lng)) {
+    try {
+      // country-coder uses [longitude, latitude]
+      result = Boolean(isIn([lng, lat], code))
+    } catch {
+      result = false
+    }
+  }
+  countryByCoordCache.set(cacheKey, result)
+  return result
+}
+
 export function filterNews(items: NewsItem[], filter: FilterState) {
   const list = items.filter((n) => {
-    if (filter.country && n.country !== filter.country) return false
+    if (filter.country) {
+      const selected = filter.country.trim().toUpperCase()
+      // 兼容旧值（名称）和新值（ISO alpha-2 code）
+      if (/^[A-Z]{2}$/.test(selected)) {
+        if (!isPointInCountry(selected, n.lat, n.lng, n.id)) return false
+      } else if (n.country !== filter.country) {
+        return false
+      }
+    }
     if (filter.media && n.media !== filter.media) return false
     if (filter.continent && n.continent !== filter.continent) return false
     if (filter.type && n.type !== filter.type) return false
