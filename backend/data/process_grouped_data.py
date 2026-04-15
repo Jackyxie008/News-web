@@ -440,7 +440,7 @@ async def worker(name, platform_key, queue, client, db_conn):
                 payload.update(config["extra_options"])
             
             try:
-                response = await client.post(config['url'], headers=headers, json=payload, timeout=60)
+                response = await client.post(config['url'], headers=headers, json=payload, timeout=90)
                 response.raise_for_status()
                 
                 # 成功重置失败计数

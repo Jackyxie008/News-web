@@ -29,6 +29,7 @@ const filter = ref<FilterState>({
 const allItems = ref<NewsItem[]>([])
 const filteredItems = computed(() => filterNews(allItems.value, filter.value))
 const selectedDetail = ref<NewsDetail | null>(null)
+const focusRequestId = ref(0)
 
 const typeOptions = computed(() => {
   const list = new Set(allItems.value.map((n) => n.type))
@@ -49,6 +50,11 @@ function onSelectNews(news: NewsItem | null) {
 function onCloseDetail() {
   selectedId.value = null
   selectedDetail.value = null
+}
+
+function onLocateDetail() {
+  if (!selectedId.value) return
+  focusRequestId.value += 1
 }
 
 function onChangeLang(value: Lang) {
@@ -121,12 +127,19 @@ watch(lang, async (nextLang) => {
 
 <template>
   <main class="relative h-screen w-screen overflow-hidden bg-black">
-    <MapPanel :items="filteredItems" :selected-id="selectedId" :lang="lang" @select="onSelectNews" />
+    <MapPanel
+      :items="filteredItems"
+      :selected-id="selectedId"
+      :lang="lang"
+      :focus-request-id="focusRequestId"
+      @select="onSelectNews"
+    />
     <NewsDetailCard
       :visible="Boolean(selectedId)"
       :lang="lang"
       :detail="selectedDetail"
       @close="onCloseDetail"
+      @locate="onLocateDetail"
     />
     <div class="absolute inset-x-0 top-0 z-[1000]">
       <TopNav

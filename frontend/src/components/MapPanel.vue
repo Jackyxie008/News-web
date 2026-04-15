@@ -8,6 +8,7 @@ const props = defineProps<{
   items: NewsItem[]
   selectedId: string | null
   lang: 'zh' | 'en'
+  focusRequestId?: number
 }>()
 
 const emit = defineEmits<{ select: [news: NewsItem | null] }>()
@@ -161,7 +162,7 @@ function openClusterPopup(cluster: L.MarkerCluster) {
       closeButton: true,
       maxWidth: 340,
       closeOnClick: false,
-      autoClose: false,
+      autoClose: true,
       className: 'cluster-news-popup',
     })
   }
@@ -222,15 +223,28 @@ function renderMarkers() {
     if (!normalized) continue
     const active = n.id === props.selectedId
     const m = L.marker(normalized, { icon: markerIcon(active), keyboard: false })
-    m.on('click', () => {
+    m.on('click', (event: L.LeafletMouseEvent) => {
+      event.originalEvent?.preventDefault()
+      event.originalEvent?.stopPropagation()
       emit('select', n)
+      if (m.getPopup()) {
+        m.setPopupContent(popupNode(n))
+      } else {
+        m.bindPopup(popupNode(n), {
+          autoPan: true,
+          closeButton: true,
+          closeOnClick: false,
+          autoClose: true,
+          className: 'single-news-popup',
+        })
+      }
       m.openPopup()
     })
     m.bindPopup(popupNode(n), {
       autoPan: true,
       closeButton: true,
       closeOnClick: false,
-      autoClose: false,
+      autoClose: true,
       className: 'single-news-popup',
     })
     g.addLayer(m)
@@ -265,6 +279,15 @@ function focusSelected() {
   m.openPopup()
 }
 
+function centerSelected() {
+  if (!map.value) return
+  if (!selected.value) return
+  const m = markerById.get(selected.value.id)
+  if (!m) return
+  const currentZoom = map.value.getZoom()
+  map.value.setView(m.getLatLng(), currentZoom, { animate: true })
+}
+
 onMounted(() => {
   if (!mapRef.value) return
   const m = L.map(mapRef.value, {
@@ -273,6 +296,7 @@ onMounted(() => {
     worldCopyJump: true,
     preferCanvas: true,
     zoomControl: false,
+    closePopupOnClick: false,
   })
   const t = L.tileLayer(googleTileUrl(), {
     maxZoom: 18,
@@ -304,6 +328,13 @@ watch(
   () => {
     applySelectedStyle()
     focusSelected()
+  },
+)
+
+watch(
+  () => props.focusRequestId,
+  () => {
+    centerSelected()
   },
 )
 
@@ -353,5 +384,9 @@ watch(
   line-height: 1;
   font-weight: 700;
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.88), 0 6px 16px rgba(0, 0, 0, 0.28);
+}
+
+.leaflet-popup-content-wrapper {
+  position: relative;
 }
 </style>

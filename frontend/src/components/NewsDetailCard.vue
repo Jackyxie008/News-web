@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { NewsDetail } from '@/lib/news'
 import closeIcon from '@/assets/icon_x.svg'
+import locationOnIcon from '@/assets/location_on.svg'
 
 const props = defineProps<{
   visible: boolean
@@ -10,6 +11,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   close: []
+  locate: []
 }>()
 </script>
 
@@ -23,14 +25,24 @@ const emit = defineEmits<{
         <h2 class="break-words text-[34px] font-semibold leading-[1.2] text-black">
           {{ props.detail?.title || (props.lang === 'en' ? 'News Title' : '新闻标题') }}
         </h2>
-        <button
-          class="inline-flex h-8 w-8 flex-none items-center justify-center rounded-md bg-transparent hover:bg-zinc-100"
-          type="button"
-          aria-label="关闭"
-          @click="emit('close')"
-        >
-          <img :src="closeIcon" alt="X" class="h-5 w-5" />
-        </button>
+        <div class="flex flex-none flex-col items-center gap-1">
+          <button
+            class="inline-flex h-8 w-8 items-center justify-center rounded-md bg-transparent hover:bg-zinc-100"
+            type="button"
+            aria-label="关闭"
+            @click="emit('close')"
+          >
+            <img :src="closeIcon" alt="X" class="h-5 w-5" />
+          </button>
+          <button
+            class="inline-flex h-8 w-8 items-center justify-center rounded-md bg-transparent hover:bg-zinc-100"
+            type="button"
+            aria-label="定位到地图"
+            @click="emit('locate')"
+          >
+            <img :src="locationOnIcon" alt="location_on" class="h-6 w-6" />
+          </button>
+        </div>
       </div>
 
       <div class="flex-1 space-y-4 overflow-y-auto pr-1 text-black">
