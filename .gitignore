@@ -26,3 +26,6 @@ frontend/.env
 .DS_Store
 .vscode/
 *.log
+
+.figma/
+.figma

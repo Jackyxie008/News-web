@@ -25,7 +25,8 @@ def create_grouped_news_table():
             latitude REAL,
             longitude REAL,
             category TEXT,
-            keywords TEXT,
+            keywords_en TEXT,
+            keywords_cn TEXT,
             links TEXT,
             vector BLOB
         )

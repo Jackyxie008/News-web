@@ -319,7 +319,8 @@ async def worker(name, platform_key, queue, client, db_conn):
                     "full_text_cn": "The same summary translated to professional Chinese",
                     "location_en": "The single location name in English",
                     "location_cn": "The same location name translated to professional Chinese",
-                    "keywords": ["tag1", "tag2", "tag3"],
+                    "keywords_en": ["tag1", "tag2", "tag3"],
+                    "keywords_cn": ["标签1", "标签2", "标签3"],
                     "category": "one of: politics, disaster, finance, society, tech, entertainment, sports, international"
                 }}
                 Return ONLY the raw JSON object. Do not include markdown code blocks, preamble, or any other text.
@@ -372,7 +373,8 @@ async def worker(name, platform_key, queue, client, db_conn):
                     "full_text_cn": "The same summary translated to professional Chinese",
                     "location_en": "The single central location in English",
                     "location_cn": "The same location name translated to professional Chinese",
-                    "keywords": ["tag1", "tag2", "tag3"],
+                    "keywords_en": ["tag1", "tag2", "tag3"],
+                    "keywords_cn": ["标签1", "标签2", "标签3"],
                     "category": "one of: politics, disaster, finance, society, tech, entertainment, sports, international"
                 }}
                 Return ONLY the raw JSON object. Do not include markdown code blocks, preamble, or any other text.
@@ -506,8 +508,9 @@ async def worker(name, platform_key, queue, client, db_conn):
             else:
                 update_data["category"] = None
             
-            # 关键词 保证永远返回安全JSON
-            update_data["keywords"] = json.dumps(ai_result.get("keywords", []), ensure_ascii=False)
+            # 关键词 中英文分别存储
+            update_data["keywords_en"] = json.dumps(ai_result.get("keywords_en", []), ensure_ascii=False)
+            update_data["keywords_cn"] = json.dumps(ai_result.get("keywords_cn", []), ensure_ascii=False)
             
             # 双语标题和正文
             update_data["title_en"] = str(ai_result.get("title_en", "")).strip()[:500]

@@ -157,7 +157,9 @@ def row_to_news(row: sqlite3.Row, lang: str) -> dict[str, Any] | None:
         row["location_cn"] if lang == "en" else row["location_en"]
     ) or ""
     country = extract_country(location, lang)
-    keywords = parse_keywords(row["keywords"] or "")
+    # 根据语言选择对应的关键词字段
+    keywords_field = "keywords_en" if lang == "en" else "keywords_cn"
+    keywords = parse_keywords(row[keywords_field] or "")
     if not keywords:
         keywords = extract_keywords_fallback(title, full_text)
     links = parse_links(row["links"] or "")
@@ -211,7 +213,8 @@ def fetch_news_list(limit: int = 1000, lang: str = "zh") -> list[dict[str, Any]]
               g.latitude,
               g.longitude,
               g.category,
-              g.keywords,
+              g.keywords_en,
+              g.keywords_cn,
               g.links,
               (
                 SELECT n.source
@@ -273,7 +276,8 @@ def fetch_news_detail(news_id: str, lang: str = "zh") -> dict[str, Any] | None:
               g.latitude,
               g.longitude,
               g.category,
-              g.keywords,
+              g.keywords_en,
+              g.keywords_cn,
               g.links,
               (
                 SELECT n.source
