@@ -31,7 +31,8 @@ def create_grouped_news_table():
             image_url TEXT,
             image_source TEXT,
             all_sources TEXT,
-            vector BLOB
+            vector BLOB,
+            added TEXT DEFAULT ''
         )
     ''')
 
@@ -146,15 +147,15 @@ def update_group_news_ids(group_id, new_news_ids, new_links, new_published, new_
         
         cursor.execute('''
             UPDATE grouped_news 
-            SET news_id = ?, links = ?, published = ?, vector = ?
+            SET news_id = ?, links = ?, published = ?, vector = ?, added = ?
             WHERE id = ?
-        ''', (merged_news_ids, merged_links, merged_published, vector_blob, group_id))
+        ''', (merged_news_ids, merged_links, merged_published, vector_blob, ','.join(map(str, new_news_ids)), group_id))
     else:
         cursor.execute('''
             UPDATE grouped_news 
-            SET news_id = ?, links = ?, published = ?
+            SET news_id = ?, links = ?, published = ?, added = ?
             WHERE id = ?
-        ''', (merged_news_ids, merged_links, merged_published, group_id))
+        ''', (merged_news_ids, merged_links, merged_published, ','.join(map(str, new_news_ids)), group_id))
     
     conn.commit()
     conn.close()
@@ -169,9 +170,9 @@ def create_new_group(news_ids, links, published, vector, image_url, image_source
     links_str = ','.join(links)
     
     cursor.execute('''
-        INSERT INTO grouped_news (news_id, published, links, image_url, image_source, all_sources, vector)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-    ''', (news_ids_str, published, links_str, image_url, image_source, all_sources, vector.tobytes()))
+        INSERT INTO grouped_news (news_id, published, links, image_url, image_source, all_sources, vector, added)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (news_ids_str, published, links_str, image_url, image_source, all_sources, vector.tobytes(), news_ids_str))
     
     conn.commit()
     conn.close()

@@ -70,30 +70,39 @@ async def get_grouped_news(conn, id):
             contents_text: 合并后的正文字符串
             news_count: 该分组对应的新闻ID总数量(int)
     """
-    # 1. 查询分组对应的新闻ID列表
+    # 1. 先查询added字段(新增ID)，如果存在则优先用added，否则用全部news_id
     cursor = await conn.execute(
-        "SELECT news_id FROM grouped_news WHERE id = ?",
+        "SELECT added, news_id FROM grouped_news WHERE id = ?",
         (id,)
     )
     row = await cursor.fetchone()
     
-    if not row or not row[0]:
+    if not row:
         return "", "", 0
     
-    news_ids_str = row[0]
+    added_str, all_news_ids_str = row
+    
+    # 优先使用added中的新增ID，如果没有则用全部ID
+    if added_str and added_str.strip():
+        news_ids_str = added_str
+    else:
+        news_ids_str = all_news_ids_str
+        
+    if not news_ids_str:
+        return "", "", 0
+    
     news_ids = [int(nid.strip()) for nid in news_ids_str.split(',') if nid.strip().isdigit()]
     
     if not news_ids:
         return "", "", 0
     
-    # 2. 按authority从高到低排序，取前5条新闻
+    # 2. 按authority从高到低排序
     placeholders = ','.join(['?'] * len(news_ids))
     query = f"""
         SELECT title, full_text 
         FROM news 
         WHERE id IN ({placeholders}) 
-        ORDER BY authority DESC 
-        LIMIT 5
+        ORDER BY authority DESC
     """
     
     cursor = await conn.execute(query, news_ids)
@@ -209,6 +218,14 @@ async def get_all_unprocessed_ids(conn):
     rows = await cursor.fetchall()
     return [row[0] for row in rows]
 
+async def get_all_added_ids(conn):
+    """获取数据库中所有有新增新闻的分组ID"""
+    cursor = await conn.execute(
+        "SELECT id FROM grouped_news WHERE added != '' ORDER BY id ASC"
+    )
+    rows = await cursor.fetchall()
+    return [row[0] for row in rows]
+
 def clean_json_response(text):
     """
     清洗大模型返回的JSON内容 处理各种常见格式问题:
@@ -303,18 +320,21 @@ async def worker(name, platform_key, queue, client, db_conn):
                 ### Task
                 1. Summarize the following news into a clean, fluent passage (300-500 words).
                 2. Create professional titles in both English and Chinese.
-                3. **Spatial Entity Extraction (STRICT & CONCISE & ONE MAIN LOCATION ONLY)**:
-                    - **Granularity Priority**: Find the most specific location. Order: 1. Landmark -> 2. District -> 3. City -> 4. Province -> 5. Country.
-                    - **Minimalist Formatting**: Return a string from **Specific to General**. 
-                    - **Anti-Redundancy Rule (CRITICAL)**: 
-                        - DO NOT repeat names across levels. If a City is the same as the Province or Country (e.g., Singapore, Hong Kong, Gibraltar), return ONLY [Name, Higher-level-Country].
-                        - DO NOT "fill in" parent regions if they are already implied or identical to the specific location.
-                        - *Bad*: "United Kingdom, London, United Kingdom"
-                        - *Good*: "London, United Kingdom"
-                        - *Bad*: "Singapore, Singapore, Singapore"
-                        - *Good*: "Singapore"
-                    - **No Empty**: If unknown, use the news origin country only.
-                4. Extract 3-5 keywords and classify into ONE category: [politics, disaster, finance, society, tech, entertainment, sports, international].
+                3. **Location Extraction (STRICT & ADAPTIVE & ONLY ONE SINGLE POINT)**:
+                    - **Granularity Priority (CRITICAL)**: Always try to find the most specific location in this order: 
+                        1. Landmark -> 2. City -> 3. Province -> 4. Country.
+                    - **Adaptive Precision Rule**: 
+                        - If a specific level (1-3) is mentioned, return "[Specific], [Country]".
+                        - If ONLY a broad level (4) is mentioned or relevant (e.g., national policy, macro economy), return ONLY the **[Country Name]**. 
+                        - DO NOT force-fill or hallucinate a city if it is not explicitly mentioned.
+                    - **Independent Geo-Entities**: For international waters, straits, or cross-border areas (e.g., "Strait of Hormuz", "Gaza Strip"), return the entity name ALONE. Do NOT append a country.
+                    - **Anti-Redundancy & Alias Ban (CRITICAL)**: 
+                        - NO repeating names (e.g., NO "London, UK, UK"). 
+                        - NO aliases (e.g., NO "USA, United States"). Use only the formal short name.
+                        - If City equals Country (e.g., Singapore), return only the name ONCE.
+                        - Administrative regions (e.g., Hong Kong, Macau) should be treated as "City, Country" (e.g., "Hong Kong, China") rather than just "China" or "Hong Kong".
+                    - **Atomic Selection**: If the news involves multiple countries or locations, pick the ONE central "stage" where the main event occurred. NEVER output a list.
+                4. Extract 3-5 keywords and classify into ONE category: [politics, military, disaster, finance, society, tech, entertainment, sports, international].
 
                 ### Language Requirement
                 - Input may be Chinese or English.
@@ -324,13 +344,13 @@ async def worker(name, platform_key, queue, client, db_conn):
                 Source Title: {titles}
                 Source Content: {contents}
 
-                ### Output Format
-                Return ONLY a raw JSON object. No markdown, no preamble.
+                ### Output Format (STRICT JSON)
+                Return ONLY a raw JSON object. No markdown code blocks, no preamble.
                 {{
-                    "title_en": "English title",
-                    "title_cn": "中文标题",
-                    "full_text_en": "English summary",
-                    "full_text_cn": "中文摘要",
+                    "title_en": "Professional English title",
+                    "title_cn": "专业中文标题",
+                    "full_text_en": "Professional English summary",
+                    "full_text_cn": "专业中文摘要",
                     "location_en": "Specific, General (e.g., 'Big Ben, London, UK' or just 'London, UK')",
                     "location_cn": "具体, 总体 (例如：'大本钟, 伦敦, 英国' 或直接 '伦敦, 英国')",
                     "keywords_en": ["tag1", "tag2"],
@@ -342,41 +362,45 @@ async def worker(name, platform_key, queue, client, db_conn):
                 # 多条新闻聚合：提炼标题、摘要、地点、关键词，判断新闻类型
                 prompt = f"""
                 ### Role
-                You are a senior News Synthesizer and GIS Data Engineer for a global news map.
+                You are a senior News Synthesizer and GIS Data Specialist. Your task is to standardize news into a global GIS format.
 
                 ### Task
                 1. **Fact Integration**: Merge all provided news sources into ONE single, coherent report.
                 2. **Unified Titles**: Create professional, high-quality titles in both English and Chinese.
                 3. **Deep Synthesis**: Write a detailed summary (300-500 words). Write natively in each language; do not translate literally.
-                4. **Spatial Entity Extraction (STRICT & CONCISE & ONE MAIN LOCATION ONLY)**:
-                    - **Granularity Priority**: Find the MOST SPECIFIC location possible. Priority: 1. Landmark -> 2. District -> 3. City -> 4. Province -> 5. Country.
-                    - **Standard Format**: "Specific Location, General Region, Country".
-                    - **Anti-Redundancy Rule (CRITICAL)**: 
-                        - DO NOT repeat names across levels. 
-                        - If a City is also a Country/Province (e.g., Singapore, Hong Kong), return only the name once.
-                        - *Bad*: "United Kingdom, London, United Kingdom"
-                        - *Good*: "London, United Kingdom"
-                        - *Bad*: "Singapore, Singapore"
-                        - *Good*: "Singapore"
-                    - **No Padding**: Do not add unnecessary administrative levels if they aren't explicitly required for clarity.
-                5. **Categorization**: Classify into ONE: [politics, disaster, finance, society, tech, entertainment, sports, international].
+                4. **Location Extraction (STRICT & ADAPTIVE & ONLY ONE SINGLE POINT)**:
+                    - **Granularity Priority (CRITICAL)**: Always try to find the most specific location in this order: 
+                        1. Landmark -> 2. City -> 3. Province -> 4. Country.
+                    - **Adaptive Precision Rule**: 
+                        - If a specific level (1-3) is mentioned, return "[Specific], [Country]".
+                        - If ONLY a broad level (4) is mentioned or relevant (e.g., national policy, macro economy), return ONLY the **[Country Name]**. 
+                        - DO NOT force-fill or hallucinate a city if it is not explicitly mentioned.
+                    - **Independent Geo-Entities**: For international waters, straits, or cross-border areas (e.g., "Strait of Hormuz", "Gaza Strip"), return the entity name ALONE. Do NOT append a country.
+                    - **Anti-Redundancy & Alias Ban (CRITICAL)**: 
+                        - NO repeating names (e.g., NO "London, UK, UK"). 
+                        - NO aliases (e.g., NO "USA, United States"). Use only the formal short name.
+                        - If City equals Country (e.g., Singapore), return only the name ONCE.
+                        - Administrative regions (e.g., Hong Kong, Macau) should be treated as "City, Country" (e.g., "Hong Kong, China") rather than just "China" or "Hong Kong".
+                    - **Atomic Selection**: If the news involves multiple countries or locations, pick the ONE central "stage" where the main event occurred. NEVER output a list.
+                5. **Categorization**: Classify into ONE: [politics, military, disaster, finance, society, tech, entertainment, sports, international].
 
                 ### Language Requirement
-                - Output MUST contain both high-quality English and Chinese. 
-                - Ensure the journalistic tone is professional and natural in both cultures.
+                - Input may be Chinese or English.
+                - Output MUST be high-quality, native-style content in BOTH languages. 
+                - Do NOT use machine translation; write each version independently.
 
                 Source Titles: {titles}
                 Source Contents: {contents}
 
                 ### Output Format (STRICT JSON)
-                Return ONLY the raw JSON object. No markdown code blocks, preamble, or any other text.
+                Return ONLY a raw JSON object. No markdown code blocks, no preamble.
                 {{
                     "title_en": "Professional English title",
                     "title_cn": "专业中文标题",
                     "full_text_en": "Deep English summary...",
                     "full_text_cn": "深度中文摘要...",
-                    "location_en": "Most specific location, Country (e.g., 'Big Ben, London, UK')",
-                    "location_cn": "最具体地点, 国家 (例如：'大本钟, 伦敦, 英国')",
+                    "location_en": "Specific, General (e.g., 'Big Ben, London, UK' or just 'London, UK')",
+                    "location_cn": "具体, 总体 (例如：'大本钟, 伦敦, 英国' 或直接 '伦敦, 英国')",
                     "keywords_en": ["tag1", "tag2", "tag3"],
                     "keywords_cn": ["标签1", "标签2", "标签3"],
                     "category": "category_name"
@@ -443,7 +467,7 @@ async def worker(name, platform_key, queue, client, db_conn):
                 payload.update(config["extra_options"])
             
             try:
-                response = await client.post(config['url'], headers=headers, json=payload, timeout=90)
+                response = await client.post(config['url'], headers=headers, json=payload, timeout=120)
                 response.raise_for_status()
                 
                 # 成功重置失败计数
@@ -523,6 +547,7 @@ async def worker(name, platform_key, queue, client, db_conn):
             
             
             # 6. 写入数据库
+            update_data["added"] = ""
             await update_grouped_news(db_conn, news_id, update_data)
             
             print(f"✅ [{name}] 完成 ID {news_id}: {loc_name_en} ({lat}, {lon})")
@@ -610,9 +635,22 @@ async def process_all_unprocessed():
     else:
         print("✅ 没有需要处理的新分组")
 
-if __name__ == "__main__":
-    # asyncio.run(process_all_unprocessed())
+async def process_all_added():
+    """自动获取并处理所有有新增新闻的分组 主入口"""
+    ids = []
+    
+    async with aiosqlite.connect(DB_PATH) as conn:
+        ids = await get_all_added_ids(conn)
+    
+    if ids:
+        print(f"发现 {len(ids)} 个有新增新闻的分组，开始处理...")
+        await process_grouped_data(ids)
+        print("\n✅ 所有新增分组数据处理完成！程序正常退出。")
+    else:
+        print("✅ 没有需要处理的新增新闻分组")
 
-    # 临时测试代码
-    ids = [i for i in range(21, 41)]
+if __name__ == "__main__":
+    #asyncio.run(process_all_added())
+    ids = [18, 20]
+    #ids = [i for i in range(101, 125)]
     asyncio.run(process_grouped_data(ids))

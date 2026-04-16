@@ -84,6 +84,21 @@ const emit = defineEmits<{
           <p class="text-sm text-zinc-700">{{ props.detail?.newsType || props.detail?.type || '-' }}</p>
         </section>
 
+        <section v-if="props.detail?.imageUrl">
+          <img
+            :src="props.detail.imageUrl"
+            :alt="props.detail?.title || 'news-image'"
+            class="max-h-[220px] w-full rounded-lg object-cover ring-1 ring-zinc-200"
+          />
+          <p class="mt-2 text-xs text-zinc-600">
+            {{
+              props.lang === 'en'
+                ? `Image Source: ${props.detail?.imageSource || '-'}`
+                : `图片来源：${props.detail?.imageSource || '-'}`
+            }}
+          </p>
+        </section>
+
         <section>
           <p class="mb-1 text-base font-medium">{{ props.lang === 'en' ? 'Content' : '正文' }}</p>
           <p class="whitespace-pre-wrap text-sm leading-6 text-zinc-700">
@@ -93,18 +108,34 @@ const emit = defineEmits<{
 
         <section>
           <p class="mb-1 text-base font-medium">{{ props.lang === 'en' ? 'Links' : '链接' }}</p>
-          <div class="space-y-1">
-            <a
-              v-for="link in props.detail?.links || []"
-              :key="link"
-              :href="link"
-              target="_blank"
-              rel="noopener noreferrer"
-              class="block truncate text-sm text-blue-700 underline"
+          <div class="space-y-2">
+            <div
+              v-for="(item, idx) in (props.detail?.linkItems && props.detail.linkItems.length > 0
+                ? props.detail.linkItems
+                : (props.detail?.links || []).map((url) => ({ url, source: props.detail?.media || '-' })))"
+              :key="`${item.url}-${idx}`"
             >
-              {{ link }}
-            </a>
-            <p v-if="!(props.detail?.links && props.detail.links.length > 0)" class="text-sm text-zinc-700">
+              <p class="mb-0.5 text-xs text-zinc-600">
+                {{ props.lang === 'en' ? `Source: ${item.source || '-'}` : `来源：${item.source || '-'}` }}
+              </p>
+              <a
+                :href="item.url"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="block truncate text-sm text-blue-700 underline"
+              >
+                {{ item.url }}
+              </a>
+            </div>
+            <p
+              v-if="
+                !(
+                  (props.detail?.linkItems && props.detail.linkItems.length > 0) ||
+                  (props.detail?.links && props.detail.links.length > 0)
+                )
+              "
+              class="text-sm text-zinc-700"
+            >
               -
             </p>
           </div>

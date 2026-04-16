@@ -101,8 +101,34 @@ def parse_keywords(raw: str) -> list[str]:
 def parse_links(raw: str) -> list[str]:
     if not raw:
         return []
-    links = [item.strip() for item in raw.split(",") if item.strip()]
+    text = raw.strip()
+    if not text:
+        return []
+    try:
+        data = json.loads(text)
+        if isinstance(data, list):
+            return [str(item).strip() for item in data if str(item).strip()][:20]
+    except json.JSONDecodeError:
+        pass
+    links = [item.strip() for item in re.split(r"[,|;\n]+", text) if item.strip()]
     return links[:10]
+
+def parse_sources(raw: str) -> list[str]:
+    if not raw:
+        return []
+    text = raw.strip()
+    if not text:
+        return []
+    try:
+        data = json.loads(text)
+        if isinstance(data, list):
+            return [str(item).strip() for item in data if str(item).strip()][:20]
+        if isinstance(data, dict):
+            values = [str(v).strip() for _, v in sorted(data.items(), key=lambda x: str(x[0]))]
+            return [v for v in values if v][:20]
+    except json.JSONDecodeError:
+        pass
+    return [item.strip() for item in re.split(r"[,|;\n]+", text) if item.strip()][:20]
 
 def extract_keywords_fallback(title: str, full_text: str) -> list[str]:
     text = f"{title} {full_text}".strip()
@@ -165,6 +191,16 @@ def row_to_news(row: sqlite3.Row, lang: str) -> dict[str, Any] | None:
     links = parse_links(row["links"] or "")
     if not links and row["primary_link"]:
         links = [str(row["primary_link"]).strip()]
+    source_list = parse_sources(row["all_sources"] or "")
+    default_source = row["media"] or ("Unknown Source" if lang == "en" else "未知来源")
+    link_items: list[dict[str, str]] = []
+    for idx, url in enumerate(links):
+        source = source_list[idx] if idx < len(source_list) and source_list[idx] else default_source
+        link_items.append({"url": url, "source": source})
+
+    image_candidates = parse_links(row["image_url"] or "")
+    image_url = image_candidates[0] if image_candidates else ""
+    image_source = (row["image_source"] or "").strip() or (source_list[0] if source_list else default_source)
 
     category_map = CATEGORY_MAP_EN if lang == "en" else CATEGORY_MAP_ZH
 
@@ -187,6 +223,9 @@ def row_to_news(row: sqlite3.Row, lang: str) -> dict[str, Any] | None:
         "keywords": keywords,
         "fullText": full_text,
         "links": links,
+        "linkItems": link_items,
+        "imageUrl": image_url,
+        "imageSource": image_source,
     }
 
 
@@ -221,6 +260,9 @@ def fetch_news_list(limit: int = 1000, lang: str = "zh") -> list[dict[str, Any]]
               g.keywords_en,
               g.keywords_cn,
               g.links,
+              g.image_url,
+              g.image_source,
+              g.all_sources,
               (
                 SELECT n.source
                 FROM news n
@@ -284,6 +326,9 @@ def fetch_news_detail(news_id: str, lang: str = "zh") -> dict[str, Any] | None:
               g.keywords_en,
               g.keywords_cn,
               g.links,
+              g.image_url,
+              g.image_source,
+              g.all_sources,
               (
                 SELECT n.source
                 FROM news n

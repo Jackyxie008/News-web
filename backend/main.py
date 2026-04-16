@@ -2,7 +2,7 @@ import asyncio
 from crawlers.news_crawler import crawler
 from data.to_sqlite import csv_to_sqlite
 from data.group_news import group_news
-from data.process_grouped_data import process_all_unprocessed
+from data.process_grouped_data import process_all_added
 
 print("开始执行 main.py...")
 
@@ -19,7 +19,7 @@ group_news()
 print("新闻聚类完成！")
 
 # print("开始处理聚类后的新闻数据...")
-# asyncio.run(process_all_unprocessed())
+# asyncio.run(process_all_added())
 # print("聚类数据处理完成！")
 
 print("main.py 执行完成！")

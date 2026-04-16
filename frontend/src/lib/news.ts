@@ -24,6 +24,9 @@ export type NewsDetail = NewsItem & {
   keywords: string[]
   fullText: string
   links: string[]
+  linkItems?: { url: string; source: string }[]
+  imageUrl?: string
+  imageSource?: string
 }
 
 export type FilterState = {
