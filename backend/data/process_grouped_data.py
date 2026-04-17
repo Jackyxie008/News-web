@@ -97,12 +97,14 @@ async def get_grouped_news(conn, id):
         return "", "", 0
     
     # 2. 按authority从高到低排序
+    LIMIT_COUNT = 2
     placeholders = ','.join(['?'] * len(news_ids))
     query = f"""
         SELECT title, full_text 
         FROM news 
         WHERE id IN ({placeholders}) 
         ORDER BY authority DESC
+        LIMIT {LIMIT_COUNT}
     """
     
     cursor = await conn.execute(query, news_ids)
@@ -334,7 +336,8 @@ async def worker(name, platform_key, queue, client, db_conn):
                         - If City equals Country (e.g., Singapore), return only the name ONCE.
                         - Administrative regions (e.g., Hong Kong, Macau) should be treated as "City, Country" (e.g., "Hong Kong, China") rather than just "China" or "Hong Kong".
                     - **Atomic Selection**: If the news involves multiple countries or locations, pick the ONE central "stage" where the main event occurred. NEVER output a list.
-                4. Extract 3-5 keywords and classify into ONE category: [politics, military, disaster, finance, society, tech, entertainment, sports, international].
+                4. Extract 3-5 keywords.
+                5. Classify it into ONE category: [politics, military, disaster, security, finance, diplomacy, society, tech, energy, environment, sports, entertainment].
 
                 ### Language Requirement
                 - Input may be Chinese or English.
@@ -382,7 +385,8 @@ async def worker(name, platform_key, queue, client, db_conn):
                         - If City equals Country (e.g., Singapore), return only the name ONCE.
                         - Administrative regions (e.g., Hong Kong, Macau) should be treated as "City, Country" (e.g., "Hong Kong, China") rather than just "China" or "Hong Kong".
                     - **Atomic Selection**: If the news involves multiple countries or locations, pick the ONE central "stage" where the main event occurred. NEVER output a list.
-                5. **Categorization**: Classify into ONE: [politics, military, disaster, finance, society, tech, entertainment, sports, international].
+                5. Extract 3-5 keywords.
+                6. **Categorization**: Classify into ONE category: [politics, military, disaster, security, finance, diplomacy, society, tech, energy, environment, sports, entertainment].
 
                 ### Language Requirement
                 - Input may be Chinese or English.
@@ -452,7 +456,7 @@ async def worker(name, platform_key, queue, client, db_conn):
             headers = {
                 "Authorization": f"Bearer {config['key']}",
                 "Content-Type": "application/json",
-                "User-Agent": "NewsMapBot/1.0",
+                "User-Agent": "NewsMap/1.0",
                 **config.get("extra_headers", {})
             }
             payload = {
@@ -499,7 +503,13 @@ async def worker(name, platform_key, queue, client, db_conn):
                 
                 raise
             
-            raw_content = response.json()["choices"][0]["message"]["content"]
+            # 解析AI结果，兼容不同平台的返回格式差异
+            result = response.json()
+            if "choices" in result and result["choices"]:
+                raw_content = result["choices"][0]["message"]["content"]
+            else:
+                raw_content = result["message"]["content"]
+            
             cleaned_content = clean_json_response(raw_content)
             ai_result = json.loads(cleaned_content)
             
@@ -529,11 +539,7 @@ async def worker(name, platform_key, queue, client, db_conn):
             
             # 新闻类型
             category = ai_result.get("category", "").strip().lower()
-            valid_categories = ["politics", "disaster", "finance", "society", "tech", "entertainment", "sports", "international"]
-            if category in valid_categories:
-                update_data["category"] = category
-            else:
-                update_data["category"] = None
+            update_data["category"] = category
             
             # 关键词 中英文分别存储
             update_data["keywords_en"] = json.dumps(ai_result.get("keywords_en", []), ensure_ascii=False)
@@ -650,7 +656,8 @@ async def process_all_added():
         print("✅ 没有需要处理的新增新闻分组")
 
 if __name__ == "__main__":
+    asyncio.run(process_all_unprocessed())
     #asyncio.run(process_all_added())
-    ids = [18, 20]
-    #ids = [i for i in range(101, 125)]
+    ids = [2]
+    # ids = [i for i in range(1, 78)]
     asyncio.run(process_grouped_data(ids))

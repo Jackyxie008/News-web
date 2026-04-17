@@ -1,4 +1,16 @@
 {
+  "ollama-qwen3.5:4b": {
+    "enabled": true,
+    "url": "http://localhost:11434/api/chat",
+    "rate_limit": 1.0,
+    "concurrency": 1,
+    "env_key": "OLLAMA_API_KEY",
+    "model": "qwen3.5:4b",
+    "extra_options": {
+      "think": false,
+      "stream": false
+    }
+  },
   "google_gemini": {
     "enabled": false,
     "url": "https://generativelanguage.googleapis.com/v1beta/openai/",
@@ -7,12 +19,11 @@
     "env_key": "GOOGLE_API_KEY",
     "model": "gemini-3.1-flash-lite-preview",
     "extra_options": {
-      "google": {
-          "thinking_config": {
-            "thinking_level": "low",
-            "include_thoughts": false
-          }
+      "chat_template_kwargs": {
+        "thinking_config": {
+          "thinking_budget": 0
         }
+      }
     }
   },
   "zhi_pu_cn_GLM-4.7-Flash": {
@@ -36,8 +47,8 @@
     "env_key": "NIM_API_KEY",
     "model": "minimaxai/minimax-m2.7",
     "extra_options": {
-      "thinking": {
-        "type": "disabled"
+      "chat_template_kwargs": {
+        "enable_thinking": false
       }
     }
   },
@@ -49,8 +60,8 @@
     "env_key": "NIM_API_KEY",
     "model": "deepseek-ai/deepseek-v3.2",
     "extra_options": {
-      "thinking": {
-        "type": "disabled"
+      "chat_template_kwargs": {
+        "enable_thinking": false
       }
     }
   },
@@ -58,12 +69,12 @@
     "enabled": true,
     "url": "https://api.siliconflow.cn/v1/chat/completions",
     "rate_limit": 1.0,
-    "concurrency": 2,
+    "concurrency": 5,
     "env_key": "SILICONFLOW_API_KEY",
     "model": "Qwen/Qwen3.5-4B",
     "extra_options": {
-      "thinking": {
-        "type": "disabled"
+      "chat_template_kwargs": {
+        "enable_thinking": false
       }
     }
   },
@@ -74,22 +85,18 @@
     "concurrency": 2,
     "env_key": "SILICONFLOW_API_KEY",
     "model": "deepseek-ai/DeepSeek-R1-0528-Qwen3-8B",
-    "extra_options": {
-      "thinking": {
-        "type": "disabled"
-      }
-    }
+    "extra_options": {}
   },
   "silicon_Qwen3-8B": {
-    "enabled": true,
+    "enabled": false,
     "url": "https://api.siliconflow.cn/v1/chat/completions",
     "rate_limit": 1.0,
     "concurrency": 2,
     "env_key": "SILICONFLOW_API_KEY",
     "model": "Qwen/Qwen3-8B",
     "extra_options": {
-      "thinking": {
-        "type": "disabled"
+      "chat_template_kwargs": {
+        "enable_thinking": false
       }
     }
   }

@@ -288,6 +288,18 @@ function centerSelected() {
   map.value.setView(m.getLatLng(), currentZoom, { animate: true })
 }
 
+function fitSelectedCountry() {
+  if (!map.value) return
+  if (!selected.value) return
+  const m = markerById.get(selected.value.id)
+  if (!m) return
+
+  const latlng = m.getLatLng()
+  const currentZoom = map.value.getZoom()
+  const targetZoom = Math.min(18, currentZoom + 5)
+  map.value.setView(latlng, targetZoom, { animate: true })
+}
+
 onMounted(() => {
   if (!mapRef.value) return
   const m = L.map(mapRef.value, {
@@ -334,7 +346,7 @@ watch(
 watch(
   () => props.focusRequestId,
   () => {
-    centerSelected()
+    fitSelectedCountry()
   },
 )
 

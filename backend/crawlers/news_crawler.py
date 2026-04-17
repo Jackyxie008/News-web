@@ -65,8 +65,8 @@ async def fetch(session, url):
         str: 网页 HTML 内容，失败返回 None
     """
     try:
-        # 设置 45 秒超时，使用自定义 User-Agent
-        async with session.get(url, timeout=45, headers={
+        # 设置 60 秒超时，使用自定义 User-Agent
+        async with session.get(url, timeout=60, headers={
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,webp,*/*;q=0.8"}) as resp:
             if resp.status != 200:
@@ -112,6 +112,13 @@ async def process_entry(session, entry, source, authority):
         img_match = re.search(r'<img[^>]+src=["\']([^"\']+)["\']', summary_text)
         if img_match:
             img_url = img_match.group(1)
+    
+    # 如果RSS摘要中没有找到图片，从已经下载的新闻页面HTML中提取第一张图片
+    if not img_url and html:
+        # 从完整页面HTML中查找第一张有效图片
+        page_img_match = re.search(r'<img[^>]+src=["\'](https?://[^"\']+\.(?:jpg|jpeg|png|webp|gif))["\']', html, re.IGNORECASE)
+        if page_img_match:
+            img_url = page_img_match.group(1)
 
     # 构建新闻数据字典
     return {

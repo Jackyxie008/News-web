@@ -84,9 +84,9 @@ const emit = defineEmits<{
           <p class="text-sm text-zinc-700">{{ props.detail?.newsType || props.detail?.type || '-' }}</p>
         </section>
 
-        <section v-if="props.detail?.imageUrl">
+        <section v-if="props.detail?.imageUrl?.trim()">
           <img
-            :src="props.detail.imageUrl"
+            :src="props.detail.imageUrl.trim()"
             :alt="props.detail?.title || 'news-image'"
             class="max-h-[220px] w-full rounded-lg object-cover ring-1 ring-zinc-200"
           />

@@ -11,6 +11,13 @@
         "crawl": true
     },
     {
+        "source": "CNN",
+        "rss_url": ["http://rss.cnn.com/rss/edition_world.rss"],
+        "authority": 9,
+        "content_can_be_crawled": true,
+        "crawl": true
+    },
+    {
         "source": "AP",
         "rss_url": ["https://feedx.net/rss/ap.xml"],
         "authority": 10,

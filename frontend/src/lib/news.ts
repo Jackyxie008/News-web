@@ -1,4 +1,4 @@
-import { isIn } from '@rapideditor/country-coder'
+import { isIn, m49Codes } from '@rapideditor/country-coder'
 
 export type Lang = 'zh' | 'en'
 
@@ -49,8 +49,8 @@ export type ChartData = {
 
 const API_BASE = (import.meta.env.VITE_API_BASE ?? '').replace(/\/$/, '')
 const newsListCache = new Map<Lang, NewsItem[]>()
-const newsDetailCache = new Map<string, NewsDetail | null>()
 const countryByCoordCache = new Map<string, boolean>()
+const continentByCoordCache = new Map<string, boolean>()
 
 function apiUrl(path: string) {
   return `${API_BASE}${path}`
@@ -68,14 +68,10 @@ export async function fetchNewsList(lang: Lang = 'zh'): Promise<NewsItem[]> {
 }
 
 export async function fetchNewsById(id: string, lang: Lang = 'zh'): Promise<NewsDetail | null> {
-  const cacheKey = `${lang}:${id}`
-  if (newsDetailCache.has(cacheKey)) return newsDetailCache.get(cacheKey) ?? null
-  const res = await fetch(apiUrl(`/api/news/${id}?lang=${lang}`))
+  const res = await fetch(apiUrl(`/api/news/${id}?lang=${lang}`), { cache: 'no-store' })
   if (res.status === 404) return null
   if (!res.ok) throw new Error(`获取新闻详情失败: ${res.status}`)
-  const item = (await res.json()) as NewsDetail
-  newsDetailCache.set(cacheKey, item)
-  return item
+  return (await res.json()) as NewsDetail
 }
 
 function dayKey(ts: number) {
@@ -110,6 +106,43 @@ function isPointInCountry(code: string, lat: number, lng: number, id: string) {
   return result
 }
 
+function continentMatchCodes(continent: string): string[] {
+  const v = continent.trim()
+  if (v === '亚洲' || v === 'Asia') return ['142']
+  if (v === '欧洲' || v === 'Europe') return ['150']
+  if (v === '非洲' || v === 'Africa') return ['002']
+  if (v === '大洋洲' || v === 'Oceania') return ['009']
+  if (v === '南极洲' || v === 'Antarctica') return ['010']
+  if (v === '南美洲' || v === 'South America') return ['005']
+  if (v === '北美洲' || v === 'North America') return ['021', '013', '029']
+  return []
+}
+
+function isPointInContinent(continent: string, lat: number, lng: number, id: string) {
+  const cacheKey = `${continent}|${id}`
+  const cached = continentByCoordCache.get(cacheKey)
+  if (cached !== undefined) return cached
+
+  const targets = continentMatchCodes(continent)
+  if (targets.length === 0) {
+    continentByCoordCache.set(cacheKey, false)
+    return false
+  }
+
+  let result = false
+  if (Number.isFinite(lat) && Number.isFinite(lng)) {
+    try {
+      // country-coder uses [longitude, latitude]
+      const codes = m49Codes([lng, lat])
+      result = targets.some((code) => codes.includes(code))
+    } catch {
+      result = false
+    }
+  }
+  continentByCoordCache.set(cacheKey, result)
+  return result
+}
+
 export function filterNews(items: NewsItem[], filter: FilterState) {
   const list = items.filter((n) => {
     if (filter.country) {
@@ -122,7 +155,9 @@ export function filterNews(items: NewsItem[], filter: FilterState) {
       }
     }
     if (filter.media && n.media !== filter.media) return false
-    if (filter.continent && n.continent !== filter.continent) return false
+    if (filter.continent) {
+      if (!isPointInContinent(filter.continent, n.lat, n.lng, n.id)) return false
+    }
     if (filter.type && n.type !== filter.type) return false
     if (filter.timeRange) {
       if (n.date < filter.timeRange.start) return false

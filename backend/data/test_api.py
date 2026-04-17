@@ -45,7 +45,11 @@ async def test_single_platform(platform_name, config):
                 return False
             
             result = resp.json()
-            content = result["choices"][0]["message"]["content"]
+            # 解析AI结果，兼容不同平台的返回格式差异
+            if "choices" in result and result["choices"]:
+                content = result["choices"][0]["message"]["content"]
+            else:
+                content = result["message"]["content"]
             
             print(f"📤 返回原始内容:\n{content}")
             
