@@ -11,23 +11,16 @@
         "crawl": true
     },
     {
-        "source": "CNN",
-        "rss_url": ["http://rss.cnn.com/rss/edition_world.rss"],
-        "authority": 9,
-        "content_can_be_crawled": true,
-        "crawl": true
-    },
-    {
         "source": "AP",
         "rss_url": ["https://feedx.net/rss/ap.xml"],
-        "authority": 10,
+        "authority": 1.0,
         "content_can_be_crawled": true,
         "crawl": true
     },
     {
         "source": "Reuters",
         "rss_url": ["https://news.google.com/rss/search?q=source:reuters.com+when:12h&hl=en-US&gl=US&ceid=US:en"],
-        "authority": 10,
+        "authority": 1.0,
         "content_can_be_crawled": false,
         "crawl": false
     },
@@ -35,21 +28,21 @@
         "source": "AFP",
         "rss_url": ["https://rsshub.rssforever.com/yahoo/news/provider/hk/afp.com.hk"],
         "content_can_be_crawled": true,
-        "authority": 10,
+        "authority": 1.0,
         "crawl": true
     },
     {
         "source": "Al_Jazeera",
         "rss_url": ["https://www.aljazeera.com/xml/rss/all.xml"],
         "content_can_be_crawled": true,
-        "authority": 9,
+        "authority": 0.9,
         "crawl": true
     },
     {
         "source": "News_gov_mo",
         "rss_url": ["https://govinfohub.gcs.gov.mo/api/rss/n/zh-hant"],
         "content_can_be_crawled": false,
-        "authority": 1,
+        "authority": 0.1,
         "crawl": true
     }
 ]

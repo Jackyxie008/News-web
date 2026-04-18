@@ -11,7 +11,11 @@ DB_PATH = Path("backend/data/data.db")
 
 CATEGORY_MAP_ZH = {
     "politics": "政治",
+    "diplomacy": "外交",
+    "security": "安全",
     "finance": "经济",
+    "energy": "能源",
+    "environment": "环境",
     "tech": "科技",
     "sports": "体育",
     "society": "社会",
@@ -23,7 +27,11 @@ CATEGORY_MAP_ZH = {
 
 CATEGORY_MAP_EN = {
     "politics": "Politics",
+    "diplomacy": "Diplomacy",
+    "security": "Security",
     "finance": "Finance",
+    "energy": "Energy",
+    "environment": "Environment",
     "tech": "Tech",
     "sports": "Sports",
     "society": "Society",

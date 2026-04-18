@@ -1,5 +1,5 @@
 {
-  "ollama-qwen3.5:4b": {
+  "ollama_qwen3.5:4b": {
     "enabled": true,
     "url": "http://localhost:11434/api/chat",
     "rate_limit": 1.0,
@@ -27,7 +27,7 @@
     }
   },
   "zhi_pu_cn_GLM-4.7-Flash": {
-    "enabled": false,
+    "enabled": true,
     "url": "https://open.bigmodel.cn/api/paas/v4/chat/completions",
     "rate_limit": 0.5,
     "concurrency": 1,
@@ -66,7 +66,7 @@
     }
   },
   "silicon_Qwen3.5-4B": {
-    "enabled": true,
+    "enabled": false,
     "url": "https://api.siliconflow.cn/v1/chat/completions",
     "rate_limit": 1.0,
     "concurrency": 5,
@@ -88,10 +88,10 @@
     "extra_options": {}
   },
   "silicon_Qwen3-8B": {
-    "enabled": false,
+    "enabled": true,
     "url": "https://api.siliconflow.cn/v1/chat/completions",
     "rate_limit": 1.0,
-    "concurrency": 2,
+    "concurrency": 4,
     "env_key": "SILICONFLOW_API_KEY",
     "model": "Qwen/Qwen3-8B",
     "extra_options": {

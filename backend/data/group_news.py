@@ -1,9 +1,32 @@
 import sqlite3
 import pandas as pd
 import numpy as np
+from datetime import datetime
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 from pathlib import Path
+
+
+def calculate_heat(authorities_sum, published_time):
+    """
+    计算分组热度值
+    公式: 热度 = 权威性总和 / (发布至今小时数 + 1)^1.8
+    
+    Args:
+        authorities_sum: 该分组所有新闻的权威性总和
+        published_time: 分组最早发布时间字符串 %Y-%m-%d %H:%M:%S
+        
+    Returns:
+        float: 热度值
+    """
+    try:
+        pub_dt = datetime.strptime(published_time, "%Y-%m-%d %H:%M:%S")
+        hours_diff = (datetime.now() - pub_dt).total_seconds() / 3600
+        heat = float(authorities_sum) / ((hours_diff + 2) ** 1.8)
+        # 下限保护: 热度最小值 0.00001，防止下溢为0导致排序混乱
+        return max(0.00001, heat)
+    except:
+        return max(0.00001, float(authorities_sum))
 
 def create_grouped_news_table():
     """创建 grouped_news 表"""
@@ -32,7 +55,8 @@ def create_grouped_news_table():
             image_source TEXT,
             all_sources TEXT,
             vector BLOB,
-            added TEXT DEFAULT ''
+            added TEXT DEFAULT '',
+            heat REAL DEFAULT 0
         )
     ''')
 
@@ -160,7 +184,7 @@ def update_group_news_ids(group_id, new_news_ids, new_links, new_published, new_
     conn.commit()
     conn.close()
 
-def create_new_group(news_ids, links, published, vector, image_url, image_source, all_sources):
+def create_new_group(news_ids, links, published, vector, image_url, image_source, all_sources, authorities):
     """创建新的分组"""
     db_path = Path("backend/data/data.db")
     conn = sqlite3.connect(db_path)
@@ -169,10 +193,13 @@ def create_new_group(news_ids, links, published, vector, image_url, image_source
     news_ids_str = ','.join(map(str, news_ids))
     links_str = ','.join(links)
     
+    # 计算热度值
+    heat = calculate_heat(sum(authorities), published)
+    
     cursor.execute('''
-        INSERT INTO grouped_news (news_id, published, links, image_url, image_source, all_sources, vector, added)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    ''', (news_ids_str, published, links_str, image_url, image_source, all_sources, vector.tobytes(), news_ids_str))
+        INSERT INTO grouped_news (news_id, published, links, image_url, image_source, all_sources, vector, added, heat)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (news_ids_str, published, links_str, image_url, image_source, all_sources, vector.tobytes(), news_ids_str, heat))
     
     conn.commit()
     conn.close()
@@ -279,7 +306,7 @@ def group_news():
             merged_groups_count += len(news_ids)
         else:
             # 否则创建新分组
-            create_new_group(news_ids, links, published, group_vector, best_image_url, best_image_source, all_sources)
+            create_new_group(news_ids, links, published, group_vector, best_image_url, best_image_source, all_sources, authorities)
             new_groups_count += 1
     
     print(f"✅ 增量聚类完成：合并 {merged_groups_count} 条到已有分组，创建 {new_groups_count} 个新分组")

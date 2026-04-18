@@ -9,6 +9,36 @@ from pathlib import Path
 import pandas as pd
 import re
 import json
+from dateutil import parser
+
+
+def normalize_published_time(time_str):
+    """
+    统一标准化发布时间格式
+    支持解析各种RSS时间格式，统一转换为北京时间 YYYY-MM-DD HH:MM:SS 格式
+    
+    Args:
+        time_str: 原始时间字符串
+        
+    Returns:
+        str: 标准化后的时间字符串，解析失败返回当前时间
+    """
+    if not time_str:
+        return datetime.now(timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M:%S")
+    
+    try:
+        # 自动解析各种时间格式
+        dt = parser.parse(time_str)
+        
+        # 如果没有时区信息，假设为UTC
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        
+        # 转换为本地时区（北京时间）并格式化
+        return dt.astimezone().strftime("%Y-%m-%d %H:%M:%S")
+    except (ValueError, TypeError):
+        # 解析失败返回当前时间
+        return datetime.now(timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M:%S")
 
 
 def deduplicate_news_list(news_list):
@@ -126,7 +156,7 @@ async def process_entry(session, entry, source, authority):
         "authority": authority,  # 权威度
         "title": entry.get("title"),  # 标题
         "link": link,  # 原文链接
-        "published": entry.get("published") or entry.get("updated"),  # 发布时间
+        "published": normalize_published_time(entry.get("published") or entry.get("updated")),  # 发布时间（已统一格式）
         "full_text": text or "[提取失败]",  # 正文内容，提取失败时标记
         "image_url": img_url  # 图片链接
     }
@@ -178,7 +208,7 @@ async def process_rss_source(session, rss_url, source, authority, content_can_be
                 "authority": authority,
                 "title": entry.get("title"),
                 "link": entry.get("link"),
-                "published": entry.get("published") or entry.get("updated"),
+                "published": normalize_published_time(entry.get("published") or entry.get("updated")),
                 "full_text": text or "[提取失败]",
                 "image_url": img_url
             })

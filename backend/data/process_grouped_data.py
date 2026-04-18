@@ -82,13 +82,11 @@ async def get_grouped_news(conn, id):
     
     added_str, all_news_ids_str = row
     
-    # 优先使用added中的新增ID，如果没有则用全部ID
+    # 只有added有值时才处理（说明有新增内容）
+    # 如果added为空说明该分组已经处理完成，不再重复处理
     if added_str and added_str.strip():
         news_ids_str = added_str
     else:
-        news_ids_str = all_news_ids_str
-        
-    if not news_ids_str:
         return "", "", 0
     
     news_ids = [int(nid.strip()) for nid in news_ids_str.split(',') if nid.strip().isdigit()]
@@ -656,8 +654,8 @@ async def process_all_added():
         print("✅ 没有需要处理的新增新闻分组")
 
 if __name__ == "__main__":
-    asyncio.run(process_all_unprocessed())
-    #asyncio.run(process_all_added())
-    ids = [2]
+    asyncio.run(process_all_added())
+    # asyncio.run(process_all_added())
+    # ids = [2]
     # ids = [i for i in range(1, 78)]
-    asyncio.run(process_grouped_data(ids))
+    # asyncio.run(process_grouped_data(ids))
