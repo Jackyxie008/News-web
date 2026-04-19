@@ -7,7 +7,15 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-DB_PATH = Path("backend/data/data.db")
+# 获取当前脚本所在文件夹的绝对路径 (即 backend 目录)
+BASE_DIR = Path(__file__).resolve().parent
+
+# 无论从哪启动，都以 backend 文件夹为起点
+# 如果你的 data 文件夹在 backend/data/ 下：
+DB_PATH = BASE_DIR / "data" / "data.db"
+
+# 调试用：启动时打印一下，看路径对不对
+print(f"正在连接数据库: {DB_PATH}")
 
 CATEGORY_MAP_ZH = {
     "politics": "政治",

@@ -327,6 +327,7 @@ async def worker(name, platform_key, queue, client, db_conn):
                         - If a specific level (1-3) is mentioned, return "[Specific], [Country]".
                         - If ONLY a broad level (4) is mentioned or relevant (e.g., national policy, macro economy), return ONLY the **[Country Name]**. 
                         - DO NOT force-fill or hallucinate a city if it is not explicitly mentioned.
+                        - **IF NO EXACT PLACE IS MENTIONED OR INFERABLE**: return **empty string ""** for location_en and location_cn. DO NOT invent a location.
                     - **Independent Geo-Entities**: For international waters, straits, or cross-border areas (e.g., "Strait of Hormuz", "Gaza Strip"), return the entity name ALONE. Do NOT append a country.
                     - **Anti-Redundancy & Alias Ban (CRITICAL)**: 
                         - NO repeating names (e.g., NO "London, UK, UK"). 
@@ -376,6 +377,7 @@ async def worker(name, platform_key, queue, client, db_conn):
                         - If a specific level (1-3) is mentioned, return "[Specific], [Country]".
                         - If ONLY a broad level (4) is mentioned or relevant (e.g., national policy, macro economy), return ONLY the **[Country Name]**. 
                         - DO NOT force-fill or hallucinate a city if it is not explicitly mentioned.
+                        - **IF NO EXACT PLACE IS MENTIONED OR INFERABLE**: return **empty string ""** for location_en and location_cn. DO NOT invent a location.
                     - **Independent Geo-Entities**: For international waters, straits, or cross-border areas (e.g., "Strait of Hormuz", "Gaza Strip"), return the entity name ALONE. Do NOT append a country.
                     - **Anti-Redundancy & Alias Ban (CRITICAL)**: 
                         - NO repeating names (e.g., NO "London, UK, UK"). 
@@ -514,7 +516,12 @@ async def worker(name, platform_key, queue, client, db_conn):
             # 4. 获取坐标 双语交叉搜索
             loc_name_en = ai_result.get("location_en", "")
             loc_name_cn = ai_result.get("location_cn", "")
-            lat, lon = await get_coordinates(client, loc_name_en, loc_name_cn)
+            
+            # ✅ 优化：如果两个地点都是空的，直接跳过API调用，不浪费请求
+            if not loc_name_en.strip() and not loc_name_cn.strip():
+                lat, lon = None, None
+            else:
+                lat, lon = await get_coordinates(client, loc_name_en, loc_name_cn)
             
             # 5. 准备写入数据 严格类型校验
             update_data = {}

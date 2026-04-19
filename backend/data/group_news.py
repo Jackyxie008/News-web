@@ -7,26 +7,6 @@ from sklearn.metrics.pairwise import cosine_similarity
 from pathlib import Path
 
 
-def calculate_heat(authorities_sum, published_time):
-    """
-    计算分组热度值
-    公式: 热度 = 权威性总和 / (发布至今小时数 + 1)^1.8
-    
-    Args:
-        authorities_sum: 该分组所有新闻的权威性总和
-        published_time: 分组最早发布时间字符串 %Y-%m-%d %H:%M:%S
-        
-    Returns:
-        float: 热度值
-    """
-    try:
-        pub_dt = datetime.strptime(published_time, "%Y-%m-%d %H:%M:%S")
-        hours_diff = (datetime.now() - pub_dt).total_seconds() / 3600
-        heat = float(authorities_sum) / ((hours_diff + 2) ** 1.8)
-        # 下限保护: 热度最小值 0.00001，防止下溢为0导致排序混乱
-        return max(0.00001, heat)
-    except:
-        return max(0.00001, float(authorities_sum))
 
 def create_grouped_news_table():
     """创建 grouped_news 表"""
@@ -52,8 +32,6 @@ def create_grouped_news_table():
             keywords_cn TEXT,
             links TEXT,
             image_url TEXT,
-            image_source TEXT,
-            all_sources TEXT,
             vector BLOB,
             added TEXT DEFAULT '',
             heat REAL DEFAULT 0
@@ -125,19 +103,19 @@ def generate_vectors(df):
     vectors = model.encode(texts, show_progress_bar=False, batch_size=32)
     return vectors
 
-def update_group_news_ids(group_id, new_news_ids, new_links, new_published, new_group_vector=None):
+def update_group_news_ids(group_id, new_news_ids, new_links, new_published, new_sources, new_authorities, new_image_urls, new_group_vector=None):
     """向已有分组追加新闻ID，同时加权更新分组中心向量"""
     db_path = Path("backend/data/data.db")
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     
     # 获取原有的数据
-    cursor.execute("SELECT news_id, links, published, vector FROM grouped_news WHERE id = ?", (group_id,))
+    cursor.execute("SELECT news_id, links, published, vector, image_url FROM grouped_news WHERE id = ?", (group_id,))
     row = cursor.fetchone()
     if not row:
         return
     
-    existing_news_ids, existing_links, existing_published, existing_vector_blob = row
+    existing_news_ids, existing_links, existing_published, existing_vector_blob, existing_image_url = row
     
     # 合并新闻ID
     all_news_ids = set()
@@ -150,17 +128,64 @@ def update_group_news_ids(group_id, new_news_ids, new_links, new_published, new_
     merged_news_ids = ','.join(sorted(all_news_ids, key=int))
     new_count = len(new_news_ids)
     
-    # 合并链接
-    all_links = set()
+    # 合并来源+链接 交替格式: 来源,链接,来源,链接...
+    existing_pairs = []
     if existing_links:
-        all_links.update(existing_links.split(','))
-    all_links.update(new_links)
-    merged_links = ','.join(all_links)
+        parts = existing_links.split(',')
+        for i in range(0, len(parts), 2):
+            if i+1 < len(parts):
+                existing_pairs.append( (parts[i], parts[i+1]) )
+    
+    # 合并新旧
+    all_pairs = existing_pairs.copy()
+    for i in range(len(new_sources)):
+        all_pairs.append( (new_sources[i], new_links[i]) )
+    
+    # 去重
+    seen_links = set()
+    unique_pairs = []
+    for source, link in all_pairs:
+        if link not in seen_links:
+            seen_links.add(link)
+            unique_pairs.append( (source, link) )
+    
+    # 按权威性排序
+    merged_parts = []
+    for source, link in unique_pairs:
+        merged_parts.append(source)
+        merged_parts.append(link)
+    
+    merged_links = ','.join(merged_parts)
     
     # 取最早的发布时间
     all_published = [existing_published] if existing_published else []
     all_published.append(new_published)
     merged_published = min(all_published)
+    
+    # 选择最佳图片（比较新旧图片的权威性，保留最高的）
+    max_authority = -1
+    best_image_url = None
+    best_image_source = None
+    
+    # 先读取原来已经存在的图片
+    if existing_image_url and isinstance(existing_image_url, str) and ',' in existing_image_url:
+        old_source, old_url = existing_image_url.split(',', 1)
+        best_image_url = old_url
+        best_image_source = old_source
+    
+    # 检查新图片
+    for i in range(len(new_image_urls)):
+        if new_image_urls[i] and pd.notna(new_image_urls[i]) and new_image_urls[i].strip() != '':
+            if new_authorities[i] > max_authority:
+                max_authority = new_authorities[i]
+                best_image_url = new_image_urls[i]
+                best_image_source = new_sources[i]
+    
+    # 合并图片来源+链接格式
+    if best_image_url and best_image_source:
+        merged_image = f"{best_image_source},{best_image_url}"
+    else:
+        merged_image = ""
     
     # 加权融合向量
     if new_group_vector is not None and existing_vector_blob:
@@ -171,35 +196,44 @@ def update_group_news_ids(group_id, new_news_ids, new_links, new_published, new_
         
         cursor.execute('''
             UPDATE grouped_news 
-            SET news_id = ?, links = ?, published = ?, vector = ?, added = ?
+            SET news_id = ?, links = ?, published = ?, vector = ?, added = ?, image_url = ?
             WHERE id = ?
-        ''', (merged_news_ids, merged_links, merged_published, vector_blob, ','.join(map(str, new_news_ids)), group_id))
+        ''', (merged_news_ids, merged_links, merged_published, vector_blob, ','.join(map(str, new_news_ids)), merged_image, group_id))
     else:
         cursor.execute('''
             UPDATE grouped_news 
-            SET news_id = ?, links = ?, published = ?, added = ?
+            SET news_id = ?, links = ?, published = ?, added = ?, image_url = ?
             WHERE id = ?
-        ''', (merged_news_ids, merged_links, merged_published, ','.join(map(str, new_news_ids)), group_id))
+        ''', (merged_news_ids, merged_links, merged_published, ','.join(map(str, new_news_ids)), merged_image, group_id))
     
     conn.commit()
     conn.close()
 
-def create_new_group(news_ids, links, published, vector, image_url, image_source, all_sources, authorities):
+def create_new_group(news_ids, links, published, vector, image_url, image_source, sources, authorities):
     """创建新的分组"""
     db_path = Path("backend/data/data.db")
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     
     news_ids_str = ','.join(map(str, news_ids))
-    links_str = ','.join(links)
     
-    # 计算热度值
-    heat = calculate_heat(sum(authorities), published)
-    
+    # 新建分组时直接生成来源,链接交替格式
+    links_parts = []
+    for i in range(len(news_ids)):
+        links_parts.append(sources[i])
+        links_parts.append(links[i])
+    links_str = ','.join(links_parts)
+
+    # 合并图片来源+链接格式
+    if image_url and image_source:
+        merged_image = f"{image_source},{image_url}"
+    else:
+        merged_image = ""
+
     cursor.execute('''
-        INSERT INTO grouped_news (news_id, published, links, image_url, image_source, all_sources, vector, added, heat)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ''', (news_ids_str, published, links_str, image_url, image_source, all_sources, vector.tobytes(), news_ids_str, heat))
+        INSERT INTO grouped_news (news_id, published, links, image_url, vector, added)
+        VALUES (?, ?, ?, ?, ?, ?)
+    ''', (news_ids_str, published, links_str, merged_image, vector.tobytes(), news_ids_str))
     
     conn.commit()
     conn.close()
@@ -302,11 +336,11 @@ def group_news():
         
         # 超过阈值则合并到已有分组
         if best_group_id is not None and best_similarity >= SIMILARITY_THRESHOLD:
-            update_group_news_ids(best_group_id, news_ids, links, published, group_vector)
+            update_group_news_ids(best_group_id, news_ids, links, published, sources, authorities, image_urls, group_vector)
             merged_groups_count += len(news_ids)
         else:
             # 否则创建新分组
-            create_new_group(news_ids, links, published, group_vector, best_image_url, best_image_source, all_sources, authorities)
+            create_new_group(news_ids, links, published, group_vector, best_image_url, best_image_source, sources, authorities)
             new_groups_count += 1
     
     print(f"✅ 增量聚类完成：合并 {merged_groups_count} 条到已有分组，创建 {new_groups_count} 个新分组")

@@ -66,10 +66,10 @@
     }
   },
   "silicon_Qwen3.5-4B": {
-    "enabled": false,
+    "enabled": true,
     "url": "https://api.siliconflow.cn/v1/chat/completions",
     "rate_limit": 1.0,
-    "concurrency": 5,
+    "concurrency": 2,
     "env_key": "SILICONFLOW_API_KEY",
     "model": "Qwen/Qwen3.5-4B",
     "extra_options": {
@@ -91,7 +91,7 @@
     "enabled": true,
     "url": "https://api.siliconflow.cn/v1/chat/completions",
     "rate_limit": 1.0,
-    "concurrency": 4,
+    "concurrency": 2,
     "env_key": "SILICONFLOW_API_KEY",
     "model": "Qwen/Qwen3-8B",
     "extra_options": {

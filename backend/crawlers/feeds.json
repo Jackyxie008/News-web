@@ -2,9 +2,7 @@
     {
         "source": "BBC",
         "rss_url": ["https://feeds.bbci.co.uk/news/rss.xml",
-                    "https://feeds.bbci.co.uk/news/world/rss.xml",
-                    "https://feeds.bbci.co.uk/news/business/rss.xml",
-                    "https://feeds.bbci.co.uk/news/politics/rss.xml"
+                    "https://feeds.bbci.co.uk/news/world/rss.xml"
                     ],
         "authority": 9,
         "content_can_be_crawled": true,

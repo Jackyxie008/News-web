@@ -19,7 +19,7 @@ def csv_to_sqlite():
             source TEXT,
             authority INTEGER,
             title TEXT,
-            link TEXT,
+            link TEXT UNIQUE,
             published TEXT,
             full_text TEXT,
             image_url TEXT
@@ -48,7 +48,7 @@ def csv_to_sqlite():
         # 将数据写入 SQLite 数据库
         for _, row in combined_df.iterrows():
             cursor.execute('''
-                INSERT INTO news (source, authority, title, link, published, full_text, image_url)
+                INSERT OR IGNORE INTO news (source, authority, title, link, published, full_text, image_url)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
             ''', (row['source'], row['authority'], row['title'], row['link'], row['published'], row['full_text'], row['image_url']))
 
