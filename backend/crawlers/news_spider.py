@@ -320,7 +320,7 @@ def main():
     """主函数 - 测试用"""
     # 测试URL列表
     test_urls = [
-        "https://edition.cnn.com/webview/politics/live-news/trump-indictment-stormy-daniels-news-04-03-23/index.html"
+        "https://www.dw.com/en/sudans-three-year-war-deepens-child-and-hunger-crisis/a-76837481?maca=en-rss-en-top-1022-rdf"
     ]
     
     print("=" * 60)

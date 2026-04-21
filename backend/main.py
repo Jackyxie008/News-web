@@ -60,11 +60,11 @@ async def run_pipeline():
         print("\n🔗 开始新闻聚类...")
         group_news()
         
-        # print("\n🔍 开始处理聚类数据...")
-        # await process_all_added()
+        print("\n🔍 开始处理聚类数据...")
+        await process_all_added()
         
-        # print("\n🔥 开始更新所有新闻热度值...")
-        # update_all_heat_values()
+        print("\n🔥 开始更新所有新闻热度值...")
+        update_all_heat_values()
         
         print("\n✅ 本轮执行完成")
         print(f"开始时间：{start_time}")
@@ -81,8 +81,6 @@ async def main():
     print(f"📍 按下 Ctrl+C 可以停止服务\n")
     
     while True:
-        await run_pipeline()
-        
         # 计算下一次运行时间
         next_run = get_next_run_time()
         now = datetime.datetime.now()
@@ -98,6 +96,8 @@ async def main():
             await asyncio.sleep(wait_seconds)
         except asyncio.CancelledError:
             break
+
+        await run_pipeline()
 
 
 if __name__ == "__main__":

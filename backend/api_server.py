@@ -79,7 +79,13 @@ def extract_country(location: str, lang: str) -> str:
     unknown = "Unknown" if lang == "en" else "未知地区"
     if not location:
         return unknown
-    parts = [part.strip() for part in location.split(",") if part.strip()]
+    primary_location = next(
+        (part.strip() for part in re.split(r"[;\n]+", location) if part.strip()),
+        "",
+    )
+    if not primary_location:
+        return unknown
+    parts = [part.strip() for part in primary_location.split(",") if part.strip()]
     if not parts:
         return unknown
     return parts[-1]
@@ -131,6 +137,20 @@ def parse_links(raw: str) -> list[str]:
     links = [item.strip() for item in re.split(r"[,|;\n]+", text) if item.strip()]
     return links[:10]
 
+def parse_tokens(raw: str) -> list[str]:
+    if not raw:
+        return []
+    text = raw.strip()
+    if not text:
+        return []
+    try:
+        data = json.loads(text)
+        if isinstance(data, list):
+            return [str(item).strip() for item in data if str(item).strip()]
+    except json.JSONDecodeError:
+        pass
+    return [item.strip() for item in re.split(r"[,|;\n，；]+", text) if item.strip()]
+
 def parse_sources(raw: str) -> list[str]:
     if not raw:
         return []
@@ -147,6 +167,137 @@ def parse_sources(raw: str) -> list[str]:
     except json.JSONDecodeError:
         pass
     return [item.strip() for item in re.split(r"[,|;\n]+", text) if item.strip()][:20]
+
+
+def is_url(text: str) -> bool:
+    t = (text or "").strip().lower()
+    return t.startswith("http://") or t.startswith("https://")
+
+
+def parse_link_items(raw_links: str, default_source: str) -> list[dict[str, str]]:
+    tokens = parse_tokens(raw_links)
+    if not tokens:
+        return []
+
+    items: list[dict[str, str]] = []
+
+    # 新格式: [来源, 链接, 来源, 链接, ...]
+    paired = len(tokens) >= 2 and any(is_url(tokens[i]) for i in range(1, len(tokens), 2))
+    if paired:
+        i = 0
+        while i + 1 < len(tokens):
+            source = tokens[i].strip() or default_source
+            url = tokens[i + 1].strip()
+            if is_url(url):
+                items.append({"url": url, "source": source})
+            i += 2
+        if items:
+            return items[:10]
+
+    # 兼容旧格式: 仅链接列表
+    for token in tokens:
+        if is_url(token):
+            items.append({"url": token, "source": default_source})
+    return items[:10]
+
+
+def parse_image_info(raw_image: str, default_source: str) -> tuple[str, str]:
+    tokens = parse_tokens(raw_image)
+    if not tokens:
+        return "", ""
+
+    # 新格式: [图片来源, 图片链接]
+    if len(tokens) >= 2 and is_url(tokens[1]):
+        return tokens[1], (tokens[0].strip() or default_source)
+
+    # 兼容: 只有图片链接
+    if is_url(tokens[0]):
+        return tokens[0], default_source
+
+    return "", ""
+
+
+def parse_coordinate_values(raw: Any) -> list[float]:
+    if raw is None:
+        return []
+    if isinstance(raw, (int, float)):
+        try:
+            return [float(raw)]
+        except (TypeError, ValueError):
+            return []
+
+    text = str(raw).strip()
+    if not text:
+        return []
+
+    try:
+        data = json.loads(text)
+        if isinstance(data, list):
+            values: list[float] = []
+            for item in data:
+                try:
+                    values.append(float(item))
+                except (TypeError, ValueError):
+                    continue
+            return values
+    except json.JSONDecodeError:
+        pass
+
+    tokens = [item.strip() for item in re.split(r"[;,\n，；|]+", text) if item.strip()]
+    values: list[float] = []
+    for token in tokens:
+        try:
+            values.append(float(token))
+        except ValueError:
+            continue
+    return values
+
+
+def normalize_coords(lat: float, lng: float) -> tuple[float, float] | None:
+    lat_ok = -90 <= lat <= 90
+    lng_ok = -180 <= lng <= 180
+    if lat_ok and lng_ok:
+        return lat, lng
+
+    # 部分数据可能经纬度写反：尝试自动纠偏
+    swapped_lat_ok = -90 <= lng <= 90
+    swapped_lng_ok = -180 <= lat <= 180
+    if swapped_lat_ok and swapped_lng_ok:
+        return lng, lat
+    return None
+
+
+def parse_locations(raw_location: str) -> list[str]:
+    if not raw_location:
+        return []
+    return [part.strip() for part in re.split(r"[;\n]+", raw_location) if part.strip()]
+
+
+def parse_location_points(row: sqlite3.Row, lang: str) -> list[dict[str, Any]]:
+    lat_values = parse_coordinate_values(row["latitude"])
+    lng_values = parse_coordinate_values(row["longitude"])
+    if not lat_values or not lng_values:
+        return []
+
+    location_raw = (
+        row["location_en"] if lang == "en" else row["location_cn"]
+    ) or (
+        row["location_cn"] if lang == "en" else row["location_en"]
+    ) or ""
+    names = parse_locations(location_raw)
+
+    points: list[dict[str, Any]] = []
+    pair_count = min(len(lat_values), len(lng_values))
+    for i in range(pair_count):
+        normalized = normalize_coords(lat_values[i], lng_values[i])
+        if not normalized:
+            continue
+        lat, lng = normalized
+        item: dict[str, Any] = {"lat": lat, "lng": lng}
+        if i < len(names):
+            item["name"] = names[i]
+        points.append(item)
+    return points
 
 def extract_keywords_fallback(title: str, full_text: str) -> list[str]:
     text = f"{title} {full_text}".strip()
@@ -168,19 +319,11 @@ def extract_keywords_fallback(title: str, full_text: str) -> list[str]:
 
 
 def row_to_news(row: sqlite3.Row, lang: str) -> dict[str, Any] | None:
-    lat = row["latitude"]
-    lng = row["longitude"]
-    if lat is None or lng is None:
+    points = parse_location_points(row, lang)
+    if not points:
         return None
-
-    try:
-        lat_value = float(lat)
-        lng_value = float(lng)
-    except (TypeError, ValueError):
-        return None
-
-    if not (-90 <= lat_value <= 90 and -180 <= lng_value <= 180):
-        return None
+    lat_value = points[0]["lat"]
+    lng_value = points[0]["lng"]
 
     category = (row["category"] or "").strip().lower()
     title = (
@@ -209,16 +352,12 @@ def row_to_news(row: sqlite3.Row, lang: str) -> dict[str, Any] | None:
     links = parse_links(row["links"] or "")
     if not links and row["primary_link"]:
         links = [str(row["primary_link"]).strip()]
-    source_list = parse_sources(row["all_sources"] or "")
     default_source = row["media"] or ("Unknown Source" if lang == "en" else "未知来源")
-    link_items: list[dict[str, str]] = []
-    for idx, url in enumerate(links):
-        source = source_list[idx] if idx < len(source_list) and source_list[idx] else default_source
-        link_items.append({"url": url, "source": source})
+    link_items = parse_link_items(row["links"] or "", default_source)
+    if not link_items and links:
+        link_items = [{"url": url, "source": default_source} for url in links]
 
-    image_candidates = parse_links(row["image_url"] or "")
-    image_url = image_candidates[0] if image_candidates else ""
-    image_source = (row["image_source"] or "").strip() or (source_list[0] if source_list else default_source)
+    image_url, image_source = parse_image_info(row["image_url"] or "", default_source)
 
     category_map = CATEGORY_MAP_EN if lang == "en" else CATEGORY_MAP_ZH
 
@@ -235,12 +374,13 @@ def row_to_news(row: sqlite3.Row, lang: str) -> dict[str, Any] | None:
         "heat": calc_heat(row["news_id"] or ""),
         "lat": lat_value,
         "lng": lng_value,
+        "locations": points,
         "location": location or country,
         "published": row["published"] or "",
         "newsType": category_map.get(category, "Unknown" if lang == "en" else "文化"),
         "keywords": keywords,
         "fullText": full_text,
-        "links": links,
+        "links": [item["url"] for item in link_items] if link_items else links,
         "linkItems": link_items,
         "imageUrl": image_url,
         "imageSource": image_source,
@@ -279,8 +419,6 @@ def fetch_news_list(limit: int = 1000, lang: str = "zh") -> list[dict[str, Any]]
               g.keywords_cn,
               g.links,
               g.image_url,
-              g.image_source,
-              g.all_sources,
               (
                 SELECT n.source
                 FROM news n
@@ -345,8 +483,6 @@ def fetch_news_detail(news_id: str, lang: str = "zh") -> dict[str, Any] | None:
               g.keywords_cn,
               g.links,
               g.image_url,
-              g.image_source,
-              g.all_sources,
               (
                 SELECT n.source
                 FROM news n

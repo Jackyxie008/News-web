@@ -15,6 +15,7 @@ export type NewsItem = {
   heat: number
   lat: number
   lng: number
+  locations?: { lat: number; lng: number; name?: string }[]
 }
 
 export type NewsDetail = NewsItem & {
@@ -106,6 +107,17 @@ function isPointInCountry(code: string, lat: number, lng: number, id: string) {
   return result
 }
 
+function getNewsCoords(item: NewsItem): Array<{ lat: number; lng: number }> {
+  const list = Array.isArray(item.locations) ? item.locations : []
+  if (list.length > 0) {
+    return list.filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng))
+  }
+  if (Number.isFinite(item.lat) && Number.isFinite(item.lng)) {
+    return [{ lat: item.lat, lng: item.lng }]
+  }
+  return []
+}
+
 function continentMatchCodes(continent: string): string[] {
   const v = continent.trim()
   if (v === '亚洲' || v === 'Asia') return ['142']
@@ -145,18 +157,26 @@ function isPointInContinent(continent: string, lat: number, lng: number, id: str
 
 export function filterNews(items: NewsItem[], filter: FilterState) {
   const list = items.filter((n) => {
+    const coords = getNewsCoords(n)
     if (filter.country) {
       const selected = filter.country.trim().toUpperCase()
       // 兼容旧值（名称）和新值（ISO alpha-2 code）
       if (/^[A-Z]{2}$/.test(selected)) {
-        if (!isPointInCountry(selected, n.lat, n.lng, n.id)) return false
+        if (!coords.some((point, idx) => isPointInCountry(selected, point.lat, point.lng, `${n.id}:${idx}`))) {
+          return false
+        }
       } else if (n.country !== filter.country) {
         return false
       }
     }
     if (filter.media && n.media !== filter.media) return false
     if (filter.continent) {
-      if (!isPointInContinent(filter.continent, n.lat, n.lng, n.id)) return false
+      const selectedContinent = filter.continent
+      if (
+        !coords.some((point, idx) => isPointInContinent(selectedContinent, point.lat, point.lng, `${n.id}:${idx}`))
+      ) {
+        return false
+      }
     }
     if (filter.type && n.type !== filter.type) return false
     if (filter.timeRange) {

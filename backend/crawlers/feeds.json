@@ -1,10 +1,8 @@
 [
     {
         "source": "BBC",
-        "rss_url": ["https://feeds.bbci.co.uk/news/rss.xml",
-                    "https://feeds.bbci.co.uk/news/world/rss.xml"
-                    ],
-        "authority": 9,
+        "rss_url": ["https://feeds.bbci.co.uk/news/world/rss.xml"],
+        "authority": 0.9,
         "content_can_be_crawled": true,
         "crawl": true
     },
@@ -24,15 +22,36 @@
     },
     {
         "source": "AFP",
-        "rss_url": ["https://rsshub.rssforever.com/yahoo/news/provider/hk/afp.com.hk"],
-        "content_can_be_crawled": true,
+        "rss_url": ["https://rsshub.umzzz.com/yahoo/news/provider/hk/afp.com.hk"],
+        "content_can_be_crawled": false,
         "authority": 1.0,
+        "crawl": true
+    },
+    {
+        "source": "CNN",
+        "rss_url": ["https://flipboard.com/@cnn/world-news-4kh9bmbmz.rss"],
+        "authority": 0.9,
+        "content_can_be_crawled": false,
         "crawl": true
     },
     {
         "source": "Al_Jazeera",
         "rss_url": ["https://www.aljazeera.com/xml/rss/all.xml"],
         "content_can_be_crawled": true,
+        "authority": 0.9,
+        "crawl": true
+    },
+    {
+        "source": "DW",
+        "rss_url": ["https://rss.dw.com/rdf/rss-en-top"],
+        "content_can_be_crawled": true,
+        "authority": 0.9,
+        "crawl": true
+    },
+    {
+        "source": "CCTV",
+        "rss_url": ["https://rss.datuan.dev/cctv/world"],
+        "content_can_be_crawled": false,
         "authority": 0.9,
         "crawl": true
     },

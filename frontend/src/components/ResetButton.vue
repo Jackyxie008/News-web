@@ -1,4 +1,8 @@
 <script setup lang="ts">
+const props = defineProps<{
+  lang: 'zh' | 'en'
+}>()
+
 defineEmits<{ click: [] }>()
 </script>
 
@@ -8,6 +12,6 @@ defineEmits<{ click: [] }>()
     type="button"
     @click="$emit('click')"
   >
-    重设
+    {{ props.lang === 'en' ? 'Reset' : '重设' }}
   </button>
 </template>

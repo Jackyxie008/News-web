@@ -310,106 +310,80 @@ async def worker(name, platform_key, queue, client, db_conn):
                 print(f"[{name}] ID {news_id} 没有新闻数据，跳过")
                 continue
 
-            # 2. 根据新闻数量选择不同Prompt
-            if count == 1:
-                # 单条新闻：保留原标题，提炼干净内容，提取地点和关键词，判断新闻类型
-                prompt = f"""
-                ### Role
-                You are a professional News Editor and GIS Data Specialist. Your task is to standardize news into a global GIS format.
+            # 统一使用高级提示词模板，无论新闻数量多少
+            prompt = """
+            ### Role
+            You are a professional News Editor and GIS Data Specialist. Your task is to standardize news into a global GIS format.
 
-                ### Task
-                1. Summarize the following news into a clean, fluent passage (300-500 words).
-                2. Create professional titles in both English and Chinese.
-                3. **Location Extraction (STRICT & ADAPTIVE & ONLY ONE SINGLE POINT)**:
-                    - **Granularity Priority (CRITICAL)**: Always try to find the most specific location in this order: 
-                        1. Landmark -> 2. City -> 3. Province -> 4. Country.
-                    - **Adaptive Precision Rule**: 
-                        - If a specific level (1-3) is mentioned, return "[Specific], [Country]".
-                        - If ONLY a broad level (4) is mentioned or relevant (e.g., national policy, macro economy), return ONLY the **[Country Name]**. 
-                        - DO NOT force-fill or hallucinate a city if it is not explicitly mentioned.
-                        - **IF NO EXACT PLACE IS MENTIONED OR INFERABLE**: return **empty string ""** for location_en and location_cn. DO NOT invent a location.
-                    - **Independent Geo-Entities**: For international waters, straits, or cross-border areas (e.g., "Strait of Hormuz", "Gaza Strip"), return the entity name ALONE. Do NOT append a country.
-                    - **Anti-Redundancy & Alias Ban (CRITICAL)**: 
-                        - NO repeating names (e.g., NO "London, UK, UK"). 
-                        - NO aliases (e.g., NO "USA, United States"). Use only the formal short name.
-                        - If City equals Country (e.g., Singapore), return only the name ONCE.
-                        - Administrative regions (e.g., Hong Kong, Macau) should be treated as "City, Country" (e.g., "Hong Kong, China") rather than just "China" or "Hong Kong".
-                    - **Atomic Selection**: If the news involves multiple countries or locations, pick the ONE central "stage" where the main event occurred. NEVER output a list.
-                4. Extract 3-5 keywords.
-                5. Classify it into ONE category: [politics, military, disaster, security, finance, diplomacy, society, tech, energy, environment, sports, entertainment].
+            ### Task
+            1. Summarize the following news into a clean, fluent passage (300-500 words).
+            2. Create professional titles in both English and Chinese.
+            3. **Location Extraction (CRITICAL: Core Event Location ONLY)**:
+            - **DEFINITION of "Core Event Location"**: Extract the specific location(s) where the **main action/event** of the news physically takes place or is centered on. DO NOT extract locations that are only mentioned as background, origin, headquarters, historical context, or future destinations.
+            - **Granularity Priority**: Always try to find the most specific location in this order: Landmark -> City -> Province -> Country.
+            - **Adaptive Precision Rule**:
+                - If a specific level (1-3) is mentioned as the **core event location**, return "[Specific], [Country]".
+                - If ONLY a broad level (4) is mentioned as the **core event location** (e.g., national policy, macro economy), return ONLY the **[Country Name]**.
+                - DO NOT force-fill or hallucinate a city.
+                - **IF NO EXACT CORE EVENT LOCATION IS MENTIONED OR INFERABLE**: return **empty string ""** for both fields. DO NOT invent a location.
+            - **Independent Geo-Entities**: For international waters, straits, or cross-border areas (e.g., "Strait of Hormuz", "Gaza Strip"), return the entity name ALONE. Do NOT append a country.
+            - **Anti-Redundancy & Alias Ban**:
+                - NO repeating names (e.g., NO "London, UK, UK").
+                - NO aliases (e.g., NO "USA, United States"). Use only the formal short name.
+                - If City equals Country (e.g., Singapore), return only the name ONCE.
+                - Administrative regions (e.g., Hong Kong, Macau) should be "City, Country" (e.g., "Hong Kong, China").
+            - **NON-LOCATION Exclusion (STRICT)**: A location is the place where the event occurs. DO NOT extract any of the following as a core event location:
+                - Object's nationality or birthplace (e.g., "French President" does NOT make France a core location, "Japan's team" does NOT make Japan a core location)
+                - Historical or background locations (e.g., "discovered in 2020 in London" for a 2024 event in Paris)
+                - Destination of a future plan (e.g., "will travel to Tokyo next week" - Tokyo is NOT a core location for today's news)
+            - **Multi-Location Handling**:
+                - If the news involves **multiple distinct core locations** (e.g., talks between two cities, disasters in several regions), output **all central locations**.
+                - Separate locations with **semicolon + space (`;`)**.
+                - Each location must individually pass the "Core Event Location" test.
+                - DO NOT output a location list — use `;` as the only delimiter.
+            4. Extract 3-6 keywords.
+            5. Classify into ONE category: [politics, military, disaster, security, finance, diplomacy, society, tech, energy, environment, sports, entertainment].
 
-                ### Language Requirement
-                - Input may be Chinese or English.
-                - Output MUST be high-quality, native-style content in BOTH languages. 
-                - Do NOT use machine translation; write each version independently.
+            ### Language Requirement
+            - Input may be Chinese or English.
+            - Output MUST be high-quality, native-style content in BOTH languages.
+            - Do NOT use machine translation; write each version independently.
 
-                Source Title: {titles}
-                Source Content: {contents}
+            ### Examples of Core Event Location Extraction (for reference)
 
-                ### Output Format (STRICT JSON)
-                Return ONLY a raw JSON object. No markdown code blocks, no preamble.
-                {{
-                    "title_en": "Professional English title",
-                    "title_cn": "专业中文标题",
-                    "full_text_en": "Professional English summary",
-                    "full_text_cn": "专业中文摘要",
-                    "location_en": "Specific, General (e.g., 'Big Ben, London, UK' or just 'London, UK')",
-                    "location_cn": "具体, 总体 (例如：'大本钟, 伦敦, 英国' 或直接 '伦敦, 英国')",
-                    "keywords_en": ["tag1", "tag2"],
-                    "keywords_cn": ["标签1", "标签2"],
-                    "category": "category_name"
-                }}
-                """
-            else:
-                # 多条新闻聚合：提炼标题、摘要、地点、关键词，判断新闻类型
-                prompt = f"""
-                ### Role
-                You are a senior News Synthesizer and GIS Data Specialist. Your task is to standardize news into a global GIS format.
+            **Example 1 (Correct - Single Core Location)**
+            News: "The trade deal was signed in Shanghai today. The Chinese Ministry of Commerce in Beijing announced the details."
+            - Correct location_en: "Shanghai, China" (Event signing location)
+            - Wrong location_en: "Shanghai, China; Beijing, China" (Beijing is only the announcement origin, not the core event)
 
-                ### Task
-                1. **Fact Integration**: Merge all provided news sources into ONE single, coherent report.
-                2. **Unified Titles**: Create professional, high-quality titles in both English and Chinese.
-                3. **Deep Synthesis**: Write a detailed summary (300-500 words). Write natively in each language; do not translate literally.
-                4. **Location Extraction (STRICT & ADAPTIVE & ONLY ONE SINGLE POINT)**:
-                    - **Granularity Priority (CRITICAL)**: Always try to find the most specific location in this order: 
-                        1. Landmark -> 2. City -> 3. Province -> 4. Country.
-                    - **Adaptive Precision Rule**: 
-                        - If a specific level (1-3) is mentioned, return "[Specific], [Country]".
-                        - If ONLY a broad level (4) is mentioned or relevant (e.g., national policy, macro economy), return ONLY the **[Country Name]**. 
-                        - DO NOT force-fill or hallucinate a city if it is not explicitly mentioned.
-                        - **IF NO EXACT PLACE IS MENTIONED OR INFERABLE**: return **empty string ""** for location_en and location_cn. DO NOT invent a location.
-                    - **Independent Geo-Entities**: For international waters, straits, or cross-border areas (e.g., "Strait of Hormuz", "Gaza Strip"), return the entity name ALONE. Do NOT append a country.
-                    - **Anti-Redundancy & Alias Ban (CRITICAL)**: 
-                        - NO repeating names (e.g., NO "London, UK, UK"). 
-                        - NO aliases (e.g., NO "USA, United States"). Use only the formal short name.
-                        - If City equals Country (e.g., Singapore), return only the name ONCE.
-                        - Administrative regions (e.g., Hong Kong, Macau) should be treated as "City, Country" (e.g., "Hong Kong, China") rather than just "China" or "Hong Kong".
-                    - **Atomic Selection**: If the news involves multiple countries or locations, pick the ONE central "stage" where the main event occurred. NEVER output a list.
-                5. Extract 3-5 keywords.
-                6. **Categorization**: Classify into ONE category: [politics, military, disaster, security, finance, diplomacy, society, tech, energy, environment, sports, entertainment].
+            **Example 2 (Correct - Empty for No Core Location)**
+            News: "Apple's CEO Tim Cook, a native of Alabama, discussed future plans for the company's Cupertino campus."
+            - Correct location_en: "" (No physical event location mentioned)
+            - Wrong location_en: "Alabama, USA" or "Cupertino, USA" (These are background/headquarters, not event locations)
 
-                ### Language Requirement
-                - Input may be Chinese or English.
-                - Output MUST be high-quality, native-style content in BOTH languages. 
-                - Do NOT use machine translation; write each version independently.
+            **Example 3 (Correct - Multiple Core Locations)**
+            News: "Protests erupted simultaneously in Paris and Lyon."
+            - Correct location_en: "Paris, France; Lyon, France"
+            - Wrong location_en: "France" (Too broad, misses specific cities)
 
-                Source Titles: {titles}
-                Source Contents: {contents}
+            Source Title: """ + titles + """
+            Source Content: """ + contents + """
 
-                ### Output Format (STRICT JSON)
-                Return ONLY a raw JSON object. No markdown code blocks, no preamble.
-                {{
-                    "title_en": "Professional English title",
-                    "title_cn": "专业中文标题",
-                    "full_text_en": "Deep English summary...",
-                    "full_text_cn": "深度中文摘要...",
-                    "location_en": "Specific, General (e.g., 'Big Ben, London, UK' or just 'London, UK')",
-                    "location_cn": "具体, 总体 (例如：'大本钟, 伦敦, 英国' 或直接 '伦敦, 英国')",
-                    "keywords_en": ["tag1", "tag2", "tag3"],
-                    "keywords_cn": ["标签1", "标签2", "标签3"],
-                    "category": "category_name"
-                }}
-                """
+            ### Output Format (STRICT JSON)
+            Return ONLY a raw JSON object. No markdown code blocks, no preamble.
+            {
+                "title_en": "Professional English title",
+                "title_cn": "专业中文标题",
+                "full_text_en": "Professional English summary",
+                "full_text_cn": "专业中文摘要",
+                "location_en": "Specific, General (or 'Paris, France; Berlin, Germany' for multiple, or '' for none)",
+                "location_cn": "具体, 总体 (或 '巴黎, 法国; 柏林, 德国' 表示多个, 或 '' 表示无)",
+                "location_num": integer,
+                "keywords_en": ["tag1", "tag2"],
+                "keywords_cn": ["标签1", "标签2"],
+                "category": "category_name"
+            }
+            """
 
             # 3. 调用 AI
             current_time = asyncio.get_event_loop().time()
@@ -471,7 +445,7 @@ async def worker(name, platform_key, queue, client, db_conn):
                 payload.update(config["extra_options"])
             
             try:
-                response = await client.post(config['url'], headers=headers, json=payload, timeout=120)
+                response = await client.post(config['url'], headers=headers, json=payload, timeout=240)
                 response.raise_for_status()
                 
                 # 成功重置失败计数
@@ -513,15 +487,43 @@ async def worker(name, platform_key, queue, client, db_conn):
             cleaned_content = clean_json_response(raw_content)
             ai_result = json.loads(cleaned_content)
             
-            # 4. 获取坐标 双语交叉搜索
+            # 4. 获取坐标 双语交叉搜索 支持多地点 分号分隔格式 [地点1;地点2]
             loc_name_en = ai_result.get("location_en", "")
             loc_name_cn = ai_result.get("location_cn", "")
             
-            # ✅ 优化：如果两个地点都是空的，直接跳过API调用，不浪费请求
             if not loc_name_en.strip() and not loc_name_cn.strip():
                 lat, lon = None, None
             else:
-                lat, lon = await get_coordinates(client, loc_name_en, loc_name_cn)
+                # ✅ 支持多地点处理: 分号分隔的地点列表
+                locations_en = [loc.strip() for loc in loc_name_en.split(';') if loc.strip()]
+                locations_cn = [loc.strip() for loc in loc_name_cn.split(';') if loc.strip()]
+                
+                lat_list = []
+                lon_list = []
+                
+                # 逐个处理每个地点
+                max_locations = max(len(locations_en), len(locations_cn))
+                
+                for i in range(max_locations):
+                    en = locations_en[i] if i < len(locations_en) else ""
+                    cn = locations_cn[i] if i < len(locations_cn) else ""
+                    
+                    if not en.strip() and not cn.strip():
+                        lat_list.append("")
+                        lon_list.append("")
+                        continue
+                        
+                    lat, lon = await get_coordinates(client, en, cn)
+                    
+                    lat_str = str(lat) if lat is not None else ""
+                    lon_str = str(lon) if lon is not None else ""
+                    
+                    lat_list.append(lat_str)
+                    lon_list.append(lon_str)
+                
+                # 用分号连接多个坐标 保持和地点一一对应
+                lat = ';'.join(lat_list) if lat_list else None
+                lon = ';'.join(lon_list) if lon_list else None
             
             # 5. 准备写入数据 严格类型校验
             update_data = {}
@@ -531,16 +533,9 @@ async def worker(name, platform_key, queue, client, db_conn):
             update_data["location_cn"] = str(loc_name_cn).strip()[:200] if loc_name_cn else ""
             
             
-            # 经纬度严格范围校验
-            try:
-                update_data["latitude"] = float(lat) if lat and -90 <= float(lat) <= 90 else None
-            except (ValueError, TypeError):
-                update_data["latitude"] = None
-                
-            try:
-                update_data["longitude"] = float(lon) if lon and -180 <= float(lon) <= 180 else None
-            except (ValueError, TypeError):
-                update_data["longitude"] = None
+            # 经纬度存储 支持分号分隔的多坐标格式
+            update_data["latitude"] = lat
+            update_data["longitude"] = lon
             
             # 新闻类型
             category = ai_result.get("category", "").strip().lower()
@@ -566,6 +561,15 @@ async def worker(name, platform_key, queue, client, db_conn):
             # ✅ 处理成功，清理这条新闻的失败记录释放内存
             news_platform_failures.pop(news_id, None)
         except Exception as e:
+            # ✅ 详细错误日志：打印完整异常信息
+            # error_type = type(e).__name__
+            # error_msg = str(e)[:200]
+            # error_trace = traceback.format_exc()
+            # print(f"\n\033[91m❌ [{name}] ID {news_id} 处理失败详情:\033[0m")
+            # print(f"   错误类型: {error_type}")
+            # print(f"   错误信息: {error_msg}")
+            # print(f"   堆栈跟踪:\n{error_trace[:500]}")
+            
             # ✅ 记录这个平台处理这条新闻失败了
             current_time = asyncio.get_event_loop().time()
             news_platform_failures[news_id][platform_key] = current_time + FAILURE_COOLDOWN
@@ -581,15 +585,15 @@ async def worker(name, platform_key, queue, client, db_conn):
                 # 所有平台都试过一轮了，重置跳过列表，重试次数+1
                 if retry_count < MAX_RETRY:
                     await queue.put( (news_id, retry_count + 1, set()) )
-                    print(f"⚠️  [{name}] ID {news_id} 所有平台都试过一轮，进入第 {retry_count+2} 轮重试")
+                    print(f"\033[93m⚠️  [{name}] ID {news_id} 所有平台都试过一轮，进入第 {retry_count+2} 轮重试\033[0m")
                 else:
-                    print(f"❌ [{name}] ID {news_id} 跨平台重试全部失败，永久放弃: {str(e)[:100]}")
+                    print(f"\033[91m❌ [{name}] ID {news_id} 跨平台重试全部失败，永久放弃\033[0m")
                     # 清理失败记录释放内存
                     news_platform_failures.pop(news_id, None)
             else:
                 # 还有平台没试过，带着跳过列表重新入队
                 await queue.put( (news_id, retry_count, new_skip) )
-                print(f"⚠️  [{name}] ID {news_id} 在 {platform_key} 失败，跳过此平台，交给其他平台处理")
+                print(f"\033[93m⚠️  [{name}] ID {news_id} 在 {platform_key} 失败，跳过此平台，交给其他平台处理\033[0m")
         finally:
             # 告诉队列任务完成
             queue.task_done()

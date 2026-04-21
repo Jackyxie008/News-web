@@ -16,6 +16,7 @@ import { CONTINENTS_EN, CONTINENTS_ZH, getAllCountryOptions } from '@/lib/geo'
 
 const selectedId = ref<string | null>(null)
 const lang = ref<Lang>((localStorage.getItem('lang') as Lang) === 'en' ? 'en' : 'zh')
+const mode = ref<'hot' | 'all'>('hot')
 const filter = ref<FilterState>({
   query: '',
   country: null,
@@ -27,7 +28,13 @@ const filter = ref<FilterState>({
 })
 
 const allItems = ref<NewsItem[]>([])
-const filteredItems = computed(() => filterNews(allItems.value, filter.value))
+const filteredBaseItems = computed(() => filterNews(allItems.value, filter.value))
+const filteredItems = computed(() => {
+  if (mode.value === 'hot') {
+    return filteredBaseItems.value.slice().sort((a, b) => b.heat - a.heat).slice(0, 20)
+  }
+  return filteredBaseItems.value
+})
 const selectedDetail = ref<NewsDetail | null>(null)
 const focusRequestId = ref(0)
 
@@ -59,6 +66,10 @@ function onLocateDetail() {
 
 function onChangeLang(value: Lang) {
   lang.value = value
+}
+
+function onChangeMode(value: 'hot' | 'all') {
+  mode.value = value
 }
 
 function onReset() {
@@ -144,6 +155,7 @@ watch(lang, async (nextLang) => {
     <div class="absolute inset-x-0 top-0 z-[1000]">
       <TopNav
         :lang="lang"
+        :mode="mode"
         :query="filter.query"
         :type="filter.type"
         :continent="filter.continent"
@@ -152,6 +164,7 @@ watch(lang, async (nextLang) => {
         :continent-options="continentOptions"
         :country-options="countryOptions"
         @update:lang="onChangeLang"
+        @update:mode="onChangeMode"
         @update:query="(value) => (filter.query = value)"
         @update:type="(value) => (filter.type = value)"
         @update:continent="(value) => (filter.continent = value)"

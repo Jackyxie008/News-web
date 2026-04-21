@@ -17,7 +17,7 @@ const mapRef = ref<HTMLDivElement | null>(null)
 const map = ref<L.Map | null>(null)
 const layer = ref<L.MarkerClusterGroup | null>(null)
 const tileLayer = ref<L.TileLayer | null>(null)
-const markerById = new Map<string, L.Marker>()
+const markersByNewsId = new Map<string, L.Marker[]>()
 const markerToNews = new WeakMap<L.Marker, NewsItem>()
 
 const selected = computed(() => props.items.find((n) => n.id === props.selectedId) ?? null)
@@ -28,8 +28,8 @@ function googleTileUrl() {
 }
 
 function markerIcon(active: boolean) {
-  const dot = active ? 10 : 8
-  const halo = active ? 22 : 18
+  const dot = active ? 12 : 10
+  const halo = active ? 26 : 22
   const bg = active ? '#dc2626' : '#ef4444'
   const haloBg = active ? 'rgba(220, 38, 38, 0.28)' : 'rgba(239, 68, 68, 0.22)'
   return L.divIcon({
@@ -96,9 +96,12 @@ function clusterPopupNode(cluster: L.MarkerCluster) {
   list.style.gap = '4px'
 
   const childMarkers = cluster.getAllChildMarkers() as L.Marker[]
+  const seenNews = new Set<string>()
   for (const marker of childMarkers) {
     const news = markerToNews.get(marker)
     if (!news) continue
+    if (seenNews.has(news.id)) continue
+    seenNews.add(news.id)
 
     const btn = document.createElement('button')
     btn.type = 'button'
@@ -182,10 +185,23 @@ function normalizeCoords(lat: number, lng: number): [number, number] | null {
   return null
 }
 
+function newsCoords(news: NewsItem): [number, number][] {
+  const points = Array.isArray(news.locations) ? news.locations : []
+  const normalizedPoints: [number, number][] = []
+  for (const point of points) {
+    if (!Number.isFinite(point.lat) || !Number.isFinite(point.lng)) continue
+    const normalized = normalizeCoords(point.lat, point.lng)
+    if (normalized) normalizedPoints.push(normalized)
+  }
+  if (normalizedPoints.length > 0) return normalizedPoints
+  const single = normalizeCoords(news.lat, news.lng)
+  return single ? [single] : []
+}
+
 function renderMarkers() {
   if (!map.value) return
   if (layer.value) layer.value.remove()
-  markerById.clear()
+  markersByNewsId.clear()
 
   const g = L.markerClusterGroup({
     showCoverageOnHover: false,
@@ -200,11 +216,9 @@ function renderMarkers() {
     animateAddingMarkers: false,
     iconCreateFunction(cluster) {
       const count = cluster.getChildCount()
-      const clamped = Math.min(200, Math.max(1, count))
-      const scale = Math.log10(clamped + 1)
-      const dot = Math.round(16 + scale * 10) // 16 ~ 39
-      const halo = dot + 14
-      const fontSize = Math.round(Math.max(12, dot * 0.42))
+      const dot = 20
+      const halo = 36
+      const fontSize = 13
       return L.divIcon({
         className: 'news-cluster-icon',
         html: `
@@ -219,37 +233,41 @@ function renderMarkers() {
   })
 
   for (const n of props.items) {
-    const normalized = normalizeCoords(n.lat, n.lng)
-    if (!normalized) continue
+    const points = newsCoords(n)
+    if (points.length === 0) continue
     const active = n.id === props.selectedId
-    const m = L.marker(normalized, { icon: markerIcon(active), keyboard: false })
-    m.on('click', (event: L.LeafletMouseEvent) => {
-      event.originalEvent?.preventDefault()
-      event.originalEvent?.stopPropagation()
-      emit('select', n)
-      if (m.getPopup()) {
-        m.setPopupContent(popupNode(n))
-      } else {
-        m.bindPopup(popupNode(n), {
-          autoPan: true,
-          closeButton: true,
-          closeOnClick: false,
-          autoClose: true,
-          className: 'single-news-popup',
-        })
-      }
-      m.openPopup()
-    })
-    m.bindPopup(popupNode(n), {
-      autoPan: true,
-      closeButton: true,
-      closeOnClick: false,
-      autoClose: true,
-      className: 'single-news-popup',
-    })
-    g.addLayer(m)
-    markerById.set(n.id, m)
-    markerToNews.set(m, n)
+    const markers: L.Marker[] = []
+    for (const point of points) {
+      const m = L.marker(point, { icon: markerIcon(active), keyboard: false })
+      m.on('click', (event: L.LeafletMouseEvent) => {
+        event.originalEvent?.preventDefault()
+        event.originalEvent?.stopPropagation()
+        emit('select', n)
+        if (m.getPopup()) {
+          m.setPopupContent(popupNode(n))
+        } else {
+          m.bindPopup(popupNode(n), {
+            autoPan: true,
+            closeButton: true,
+            closeOnClick: false,
+            autoClose: true,
+            className: 'single-news-popup',
+          })
+        }
+        m.openPopup()
+      })
+      m.bindPopup(popupNode(n), {
+        autoPan: true,
+        closeButton: true,
+        closeOnClick: false,
+        autoClose: true,
+        className: 'single-news-popup',
+      })
+      g.addLayer(m)
+      markerToNews.set(m, n)
+      markers.push(m)
+    }
+    markersByNewsId.set(n.id, markers)
   }
 
   g.on('clusterclick', (event: L.LeafletEvent & { layer: L.MarkerCluster; originalEvent?: MouseEvent }) => {
@@ -264,16 +282,23 @@ function renderMarkers() {
 }
 
 function applySelectedStyle() {
-  for (const [id, m] of markerById) {
+  for (const [id, markers] of markersByNewsId) {
     const active = id === props.selectedId
-    m.setIcon(markerIcon(active))
+    for (const marker of markers) marker.setIcon(markerIcon(active))
   }
+}
+
+function firstMarkerOfSelected() {
+  if (!selected.value) return null
+  const markers = markersByNewsId.get(selected.value.id)
+  if (!markers || markers.length === 0) return null
+  return markers[0]
 }
 
 function focusSelected() {
   if (!map.value) return
   if (!selected.value) return
-  const m = markerById.get(selected.value.id)
+  const m = firstMarkerOfSelected()
   if (!m) return
   map.value.panTo(m.getLatLng(), { animate: true, duration: 0.25 })
   m.openPopup()
@@ -282,7 +307,7 @@ function focusSelected() {
 function centerSelected() {
   if (!map.value) return
   if (!selected.value) return
-  const m = markerById.get(selected.value.id)
+  const m = firstMarkerOfSelected()
   if (!m) return
   const currentZoom = map.value.getZoom()
   map.value.setView(m.getLatLng(), currentZoom, { animate: true })
@@ -291,7 +316,7 @@ function centerSelected() {
 function fitSelectedCountry() {
   if (!map.value) return
   if (!selected.value) return
-  const m = markerById.get(selected.value.id)
+  const m = firstMarkerOfSelected()
   if (!m) return
 
   const latlng = m.getLatLng()

@@ -88,7 +88,7 @@ const emit = defineEmits<{
           <img
             :src="props.detail.imageUrl.trim()"
             :alt="props.detail?.title || 'news-image'"
-            class="max-h-[220px] w-full rounded-lg object-cover ring-1 ring-zinc-200"
+            class="max-h-[300px] w-full rounded-lg object-cover ring-1 ring-zinc-200"
           />
           <p class="mt-2 text-xs text-zinc-600">
             {{
