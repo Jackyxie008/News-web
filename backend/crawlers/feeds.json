@@ -22,7 +22,7 @@
     },
     {
         "source": "AFP",
-        "rss_url": ["https://rsshub.umzzz.com/yahoo/news/provider/hk/afp.com.hk"],
+        "rss_url": ["https://rss.datuan.dev/yahoo/news/provider/hk/afp.com.hk"],
         "content_can_be_crawled": false,
         "authority": 1.0,
         "crawl": true
@@ -31,7 +31,7 @@
         "source": "CNN",
         "rss_url": ["https://flipboard.com/@cnn/world-news-4kh9bmbmz.rss"],
         "authority": 0.9,
-        "content_can_be_crawled": false,
+        "content_can_be_crawled": true,
         "crawl": true
     },
     {

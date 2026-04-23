@@ -1,15 +1,46 @@
 # -*- coding: utf-8 -*-
 
-import asyncio
-import aiohttp
-import feedparser
-import trafilatura
-from datetime import datetime, timezone
-from pathlib import Path
-import re
-import json
-import sqlite3
-from dateutil import parser
+import asyncio          # 异步协程，并发爬取/请求
+import aiohttp          # 异步HTTP客户端，发网络请求
+import feedparser       # 解析 RSS / XML 订阅源（就是你刚才看的那种XML）
+import trafilatura      # 提取网页正文（自动去广告、导航栏）
+from datetime import datetime, timezone  # 处理时间、时区
+from pathlib import Path  # 处理文件路径（跨平台）
+import re               # 正则表达式，清洗文本、匹配内容
+import json             # 读写JSON格式数据
+import sqlite3          # 轻量级数据库，存爬取结果
+from dateutil import parser  # 智能解析各种时间字符串
+
+
+def extract_image_url(entry):
+    """
+    从 RSS 条目中提取最佳图片 URL
+    按优先级尝试: media_content > media_thumbnail > enclosures > summary中的img标签
+    """
+    # 1. media:content 或 media:thumbnail (CNN/路透社/BBC等标准格式)
+    media = entry.get('media_content') or entry.get('media_thumbnail')
+    if media:
+        if isinstance(media, list) and len(media) > 0:
+            # 如果有多个图片，选择尺寸最大的
+            best = max(media, key=lambda x: int(x.get('width', 0)) * int(x.get('height', 0)))
+            return best.get('url')
+        elif isinstance(media, dict):
+            return media.get('url')
+    
+    # 2. enclosures (某些 RSS 源用 enclosure 标签传图片)
+    enclosures = entry.get('enclosures') or []
+    for enc in enclosures:
+        if isinstance(enc, dict) and enc.get('type', '').startswith('image/'):
+            return enc.get('url')
+    
+    # 3. summary 中的 img 标签
+    summary = entry.get('summary') or entry.get('description') or ''
+    if summary:
+        img_match = re.search(r'<img[^>]+src=["\']([^"\']+)["\']', summary, re.IGNORECASE)
+        if img_match:
+            return img_match.group(1)
+    
+    return None
 
 
 def normalize_published_time(time_str):
@@ -58,31 +89,8 @@ async def process_entry(session, entry, source, authority):
     loop = asyncio.get_running_loop()
     text = await loop.run_in_executor(None, trafilatura.extract, html)
 
-    # 优先提取RSS原生图片
-    img_url = None
-    
-    # 1. 最高优先级: media:content 标签 (CNN/Flipboard/路透社等标准格式 完整主图)
-    if hasattr(entry, 'media_content') and entry.media_content:
-        if isinstance(entry.media_content, list) and len(entry.media_content) > 0:
-            img_url = entry.media_content[0].get('url')
-        elif isinstance(entry.media_content, dict):
-            img_url = entry.media_content.get('url')
-    
-    # 2. 第二优先级: media:thumbnail 标签 (BBC等缩略图格式)
-    if not img_url and hasattr(entry, 'media_thumbnail') and entry.media_thumbnail:
-        if isinstance(entry.media_thumbnail, list) and len(entry.media_thumbnail) > 0:
-            img_url = entry.media_thumbnail[0].get('url')
-        elif isinstance(entry.media_thumbnail, dict):
-            img_url = entry.media_thumbnail.get('url')
-    
-    # 3. 第三优先级: summary中的所有图片标签
-    if not img_url:
-        summary_text = entry.get("summary") or entry.get("description")
-        if summary_text:
-            # 匹配所有常见图片标签: img / media:thumbnail / media:content
-            img_match = re.search(r'<(?:img|media:thumbnail|media:content)[^>]+(?:src|url)=["\']([^"\']+)["\']', summary_text, re.IGNORECASE)
-            if img_match:
-                img_url = img_match.group(1)
+    # 提取RSS原生图片
+    img_url = extract_image_url(entry)
 
     return {
         "source": source,
@@ -124,31 +132,9 @@ async def process_rss_source(session, rss_url, source, authority, content_can_be
         for entry in entries_to_process:
             text = trafilatura.extract(entry.get("summary") or entry.get("description"))
             
-            # 优先提取RSS原生图片
-            img_url = None
+            # 提取RSS原生图片
+            img_url = extract_image_url(entry)
             
-            # 1. 最高优先级: media:content 标签 (CNN/Flipboard/路透社等标准格式 完整主图)
-            if hasattr(entry, 'media_content') and entry.media_content:
-                if isinstance(entry.media_content, list) and len(entry.media_content) > 0:
-                    img_url = entry.media_content[0].get('url')
-                elif isinstance(entry.media_content, dict):
-                    img_url = entry.media_content.get('url')
-            
-            # 2. 第二优先级: media:thumbnail 标签 (BBC等缩略图格式)
-            if not img_url and hasattr(entry, 'media_thumbnail') and entry.media_thumbnail:
-                if isinstance(entry.media_thumbnail, list) and len(entry.media_thumbnail) > 0:
-                    img_url = entry.media_thumbnail[0].get('url')
-                elif isinstance(entry.media_thumbnail, dict):
-                    img_url = entry.media_thumbnail.get('url')
-            
-            # 3. 第三优先级: summary中的所有图片标签
-            if not img_url:
-                summary_text = entry.get("summary") or entry.get("description")
-                if summary_text:
-                    # 匹配所有常见图片标签: img / media:thumbnail / media:content
-                    img_match = re.search(r'<(?:img|media:thumbnail|media:content)[^>]+(?:src|url)=["\']([^"\']+)["\']', summary_text, re.IGNORECASE)
-                    if img_match:
-                        img_url = img_match.group(1)
             all_items.append({
                 "source": source,
                 "authority": authority,

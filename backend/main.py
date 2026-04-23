@@ -17,7 +17,7 @@ from data.update_heat import update_all_heat_values
 #  20 = 每20分钟一次 00,20,40 分运行
 #  30 = 每30分钟一次 00,30 分运行
 #  60 = 每60分钟一次 每个小时整点运行
-RUN_INTERVAL_MINUTES = 15
+RUN_INTERVAL_MINUTES = 20
 # ==================================================================
 
 
