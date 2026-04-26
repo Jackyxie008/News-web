@@ -27,7 +27,7 @@
     }
   },
   "zhi_pu_cn_GLM-4.7-Flash": {
-    "enabled": true,
+    "enabled": false,
     "url": "https://open.bigmodel.cn/api/paas/v4/chat/completions",
     "rate_limit": 0.5,
     "concurrency": 1,

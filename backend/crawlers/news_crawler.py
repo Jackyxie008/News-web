@@ -2,7 +2,7 @@
 
 import asyncio          # 异步协程，并发爬取/请求
 import aiohttp          # 异步HTTP客户端，发网络请求
-import feedparser       # 解析 RSS / XML 订阅源（就是你刚才看的那种XML）
+import feedparser       # 解析 RSS / XML 订阅源
 import trafilatura      # 提取网页正文（自动去广告、导航栏）
 from datetime import datetime, timezone  # 处理时间、时区
 from pathlib import Path  # 处理文件路径（跨平台）

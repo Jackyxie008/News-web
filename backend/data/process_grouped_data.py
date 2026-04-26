@@ -312,77 +312,89 @@ async def worker(name, platform_key, queue, client, db_conn):
 
             # 统一使用高级提示词模板，无论新闻数量多少
             prompt = """
-            ### Role
-            You are a professional News Editor and GIS Data Specialist. Your task is to standardize news into a global GIS format.
+            ### 角色
+            你是一名专业的新闻编辑与GIS数据专家。任务：将新闻标准化为全球GIS格式。
 
-            ### Task
-            1. Summarize the following news into a clean, fluent passage (300-500 words).
-            2. Create professional titles in both English and Chinese.
-            3. **Location Extraction (CRITICAL: Core Event Location ONLY)**:
-            - **DEFINITION of "Core Event Location"**: Extract the specific location(s) where the **main action/event** of the news physically takes place or is centered on. DO NOT extract locations that are only mentioned as background, origin, headquarters, historical context, or future destinations.
-            - **Granularity Priority**: Always try to find the most specific location in this order: Landmark -> City -> Province -> Country.
-            - **Adaptive Precision Rule**:
-                - If a specific level (1-3) is mentioned as the **core event location**, return "[Specific], [Country]".
-                - If ONLY a broad level (4) is mentioned as the **core event location** (e.g., national policy, macro economy), return ONLY the **[Country Name]**.
-                - DO NOT force-fill or hallucinate a city.
-                - **IF NO EXACT CORE EVENT LOCATION IS MENTIONED OR INFERABLE**: return **empty string ""** for both fields. DO NOT invent a location.
-            - **Independent Geo-Entities**: For international waters, straits, or cross-border areas (e.g., "Strait of Hormuz", "Gaza Strip"), return the entity name ALONE. Do NOT append a country.
-            - **Anti-Redundancy & Alias Ban**:
-                - NO repeating names (e.g., NO "London, UK, UK").
-                - NO aliases (e.g., NO "USA, United States"). Use only the formal short name.
-                - If City equals Country (e.g., Singapore), return only the name ONCE.
-                - Administrative regions (e.g., Hong Kong, Macau) should be "City, Country" (e.g., "Hong Kong, China").
-            - **NON-LOCATION Exclusion (STRICT)**: A location is the place where the event occurs. DO NOT extract any of the following as a core event location:
-                - Object's nationality or birthplace (e.g., "French President" does NOT make France a core location, "Japan's team" does NOT make Japan a core location)
-                - Historical or background locations (e.g., "discovered in 2020 in London" for a 2024 event in Paris)
-                - Destination of a future plan (e.g., "will travel to Tokyo next week" - Tokyo is NOT a core location for today's news)
-            - **Multi-Location Handling**:
-                - If the news involves **multiple distinct core locations** (e.g., talks between two cities, disasters in several regions), output **all central locations**.
-                - Separate locations with **semicolon + space (`;`)**.
-                - Each location must individually pass the "Core Event Location" test.
-                - DO NOT output a location list — use `;` as the only delimiter.
-            4. Extract 3-6 keywords.
-            5. Classify into ONE category: [politics, military, disaster, security, finance, diplomacy, society, tech, energy, environment, sports, entertainment].
+            ### 任务流程
+            1. **摘要**：将新闻压缩为300-500字的流畅段落
+            2. **标题**：分别撰写专业的中英文标题
+            3. **提取地点**：按下方规则提取核心事件地点
+            4. **提取关键词**：3-6个中英文关键词
+            5. **分类**：从下方12个类别中**严格选择其一**
 
-            ### Language Requirement
-            - Input may be Chinese or English.
-            - Output MUST be high-quality, native-style content in BOTH languages.
-            - Do NOT use machine translation; write each version independently.
+            **类别（必须以英文原样输出，不可自创）**：
+            `politics`, `military`, `disaster`, `security`, `finance`, `diplomacy`, `society`, `tech`, `energy`, `environment`, `sports`, `entertainment`
 
-            ### Examples of Core Event Location Extraction (for reference)
+            ---
 
-            **Example 1 (Correct - Single Core Location)**
-            News: "The trade deal was signed in Shanghai today. The Chinese Ministry of Commerce in Beijing announced the details."
-            - Correct location_en: "Shanghai, China" (Event signing location)
-            - Wrong location_en: "Shanghai, China; Beijing, China" (Beijing is only the announcement origin, not the core event)
+            ### 地点提取规则（严格执行）
 
-            **Example 2 (Correct - Empty for No Core Location)**
-            News: "Apple's CEO Tim Cook, a native of Alabama, discussed future plans for the company's Cupertino campus."
-            - Correct location_en: "" (No physical event location mentioned)
-            - Wrong location_en: "Alabama, USA" or "Cupertino, USA" (These are background/headquarters, not event locations)
+            #### 一、什么是“核心事件地点”？
+            > 新闻中**主要行动/事件实际发生或集中所在**的具体地点。
 
-            **Example 3 (Correct - Multiple Core Locations)**
-            News: "Protests erupted simultaneously in Paris and Lyon."
-            - Correct location_en: "Paris, France; Lyon, France"
-            - Wrong location_en: "France" (Too broad, misses specific cities)
+            **排除**以下情况（即使出现地点名词，也不提取）：
+            - 背景/来源地（如“中方在记者会上表示” → 不提取北京）
+            - 总部/机构所在地（如“苹果库比蒂诺总部宣布” → 不提取库比蒂诺）
+            - 历史/背景地点（如“2020年伦敦发现...” → 不提取伦敦）
+            - 未来目的地（如“将于下周访问东京” → 不提取东京）
+            - 国籍/出生地（如“法国总统” → 不提取法国）
 
-            Source Title: """ + titles + """
-            Source Content: """ + contents + """
+            #### 二、提取粒度优先级（从细到粗）
+            地标 → 城市 → 省份 → 国家
 
-            ### Output Format (STRICT JSON)
-            Return ONLY a raw JSON object. No markdown code blocks, no preamble.
+            | 情况 | 输出格式 | 示例 |
+            |------|----------|------|
+            | 提到具体地点（地标/城市/省份） | `具体地点, 国家` | `巴黎, 法国` |
+            | 仅提到国家（如宏观政策、全国性事件） | `国家` | `中国` |
+            | 独立地理实体（海峡/国际水域/跨境区域） | `实体名`（不加国家） | `霍尔木兹海峡` |
+            | 无任何核心地点可提取 | `""`（空字符串） | `""` |
+
+            #### 三、防冗余与别名
+            - ❌ `伦敦, 英国, 英国` → ✅ `伦敦, 英国`
+            - ❌ `美国, 美利坚合众国` → ✅ `美国`
+            - ❌ `新加坡, 新加坡` → ✅ `新加坡`
+            - ✅ 特别行政区：`香港, 中国`
+
+            #### 四、多地点处理
+            - 多个核心地点用 **`; `** 分隔（分号+空格）
+            - 每个地点必须独立满足“核心事件”定义
+            - ❌ 错误：`法国`（遗漏了巴黎和里昂）
+            - ✅ 正确：`巴黎, 法国; 里昂, 法国`
+
+            ---
+
+            ### 输出格式（严格JSON）
+
+            返回**仅一个纯JSON对象**，无markdown代码块，无任何其他文字。
+
+            ```json
             {
-                "title_en": "Professional English title",
-                "title_cn": "专业中文标题",
-                "full_text_en": "Professional English summary",
-                "full_text_cn": "专业中文摘要",
-                "location_en": "Specific, General (or 'Paris, France; Berlin, Germany' for multiple, or '' for none)",
-                "location_cn": "具体, 总体 (或 '巴黎, 法国; 柏林, 德国' 表示多个, 或 '' 表示无)",
-                "location_num": integer,
-                "keywords_en": ["tag1", "tag2"],
-                "keywords_cn": ["标签1", "标签2"],
-                "category": "category_name"
+                "title_en": "English title",
+                "title_cn": "中文标题",
+                "full_text_en": "English summary (300-500 words)",
+                "full_text_cn": "中文摘要 (300-500字)",
+                "location_en": "Paris, France; Lyon, France 或 ''",
+                "location_cn": "巴黎, 法国; 里昂, 法国 或 ''",
+                "location_num": 2,
+                "keywords_en": ["keyword1", "keyword2"],
+                "keywords_cn": ["关键词1", "关键词2"],
+                "category": 类别
             }
+
+            ---
+
+            ### 语言要求
+            - 输入：中文或英文
+            - 输出：中英文均为**地道母语风格**，禁止机器翻译腔
+            - 中英文内容**独立撰写**，不是互译
+
+            ---
+
+            ### 输入新闻
+
+            来源标题：""" + titles + """
+
+            来源内容：""" + contents + """
             """
 
             # 3. 调用 AI

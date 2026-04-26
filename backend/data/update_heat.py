@@ -15,9 +15,9 @@ def calculate_heat(authorities_sum, published_time):
         hours_diff = (datetime.now() - pub_dt).total_seconds() / 3600
         heat = float(authorities_sum) / ((hours_diff + 2) ** 1.8)
         # 下限保护: 热度最小值 0.00001，防止下溢为0导致排序混乱
-        return max(0.00001, heat)
+        return max(0.000001, heat)
     except:
-        return max(0.00001, float(authorities_sum))
+        return max(0.000001, float(authorities_sum))
 
 
 def update_all_heat_values():

@@ -2,7 +2,6 @@ import asyncio
 import time
 import datetime
 from crawlers.news_crawler import crawler
-from data.to_sqlite import csv_to_sqlite
 from data.group_news import group_news
 from data.process_grouped_data import process_all_added
 from data.update_heat import update_all_heat_values
@@ -53,9 +52,6 @@ async def run_pipeline():
     try:
         print("\n📥 开始爬取数据...")
         await crawler()
-        
-        print("\n💾 开始保存到数据库...")
-        csv_to_sqlite()
         
         print("\n🔗 开始新闻聚类...")
         group_news()
