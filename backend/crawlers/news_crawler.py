@@ -148,9 +148,10 @@ async def process_rss_source(session, rss_url, source, authority, content_can_be
     return all_items
 
 
-async def crawler():
+async def crawler(conn=None):
     """
     主函数：读取 feeds.json，爬取每个 RSS 源，直接插入数据库
+    :param conn: 可选外部传入的数据库连接，不传则内部创建
     """
     feeds_file = Path("backend/crawlers/feeds.json")
     if not feeds_file.exists():
@@ -200,10 +201,14 @@ async def crawler():
         
         print(f"\n✅ 爬取完成，总共获取 {len(all_news)} 条新闻")
         
-        # 直接批量插入数据库
-        db_path = Path("backend/data/data.db")
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
+        # 处理数据库连接
+        local_conn = None
+        if conn is None:
+            db_path = Path("backend/data/data.db")
+            local_conn = sqlite3.connect(db_path)
+            cursor = local_conn.cursor()
+        else:
+            cursor = conn.cursor()
         
         # 确保表存在，第一次运行自动创建
         cursor.execute('''
@@ -218,7 +223,8 @@ async def crawler():
                 image_url TEXT
             )
         ''')
-        conn.commit()
+        if local_conn:
+            local_conn.commit()
         
         # 先批量查询所有链接，过滤已经存在的新闻
         all_links = [item['link'] for item in all_news]
@@ -252,8 +258,9 @@ async def crawler():
         # 获得实际成功插入的行数
         inserted = cursor.rowcount
         
-        conn.commit()
-        conn.close()
+        if local_conn:
+            local_conn.commit()
+            local_conn.close()
         
         print(f"✅ 数据库插入完成，新增加 {inserted} 条新闻，重复 {len(all_news) - inserted} 条")
 

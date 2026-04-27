@@ -238,13 +238,13 @@ def create_new_group(news_ids, links, published, vector, image_url, image_source
     conn.commit()
     conn.close()
 
-def group_news():
+def group_news(conn=None):
     """增量新闻聚类：两阶段算法，先内部聚类再与已有分组匹配"""
     # 创建表
-    create_grouped_news_table()
+    create_grouped_news_table(conn)
 
     # 获取新新闻数据
-    df = get_new_news_data()
+    df = get_new_news_data(conn)
 
     if df.empty:
         print("✅ 没有新的新闻需要聚类")

@@ -20,13 +20,18 @@ def calculate_heat(authorities_sum, published_time):
         return max(0.000001, float(authorities_sum))
 
 
-def update_all_heat_values():
+def update_all_heat_values(conn=None):
     """
     重新计算所有分组的最新热度值并更新到数据库
     每次数据处理完成后调用此函数
+    :param conn: 可选外部传入的数据库连接，不传则内部创建
     """
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
+    local_conn = None
+    if conn is None:
+        local_conn = sqlite3.connect(DB_PATH)
+        cursor = local_conn.cursor()
+    else:
+        cursor = conn.cursor()
 
     # 查询所有需要更新热度的分组
     cursor.execute("""
@@ -44,8 +49,9 @@ def update_all_heat_values():
 
     # 批量更新热度
     cursor.executemany("UPDATE grouped_news SET heat = ? WHERE id = ?", updates)
-    conn.commit()
-    conn.close()
+    if local_conn:
+        local_conn.commit()
+        local_conn.close()
 
     print(f"✅ 已更新 {len(updates)} 个分组的热度值")
 

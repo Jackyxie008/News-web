@@ -1,6 +1,8 @@
 import asyncio
 import time
 import datetime
+import sqlite3
+from pathlib import Path
 from crawlers.news_crawler import crawler
 from data.group_news import group_news
 from data.process_grouped_data import process_all_added
@@ -49,18 +51,22 @@ async def run_pipeline():
     print(f"⏰ 开始执行任务管道 {start_time}")
     print("="*60)
     
+    # 本轮统一打开数据库连接，所有模块复用
+    db_path = Path("backend/data/data.db")
+    conn = sqlite3.connect(db_path)
+    
     try:
         print("\n📥 开始爬取数据...")
-        await crawler()
+        await crawler(conn)
         
         print("\n🔗 开始新闻聚类...")
-        group_news()
+        group_news(conn)
         
         print("\n🔍 开始处理聚类数据...")
         await process_all_added()
         
         print("\n🔥 开始更新所有新闻热度值...")
-        update_all_heat_values()
+        update_all_heat_values(conn)
         
         print("\n✅ 本轮执行完成")
         print(f"开始时间：{start_time}")
@@ -69,6 +75,10 @@ async def run_pipeline():
     except Exception as e:
         print(f"\n❌ 执行过程出现错误: {str(e)}")
         print("   等待下一轮继续执行...")
+    finally:
+        # 统一关闭连接
+        conn.close()
+        print("\n🔌 数据库连接已关闭")
 
 
 async def main():
