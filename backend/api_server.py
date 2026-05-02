@@ -423,28 +423,28 @@ def fetch_news_list(limit: int = 1000, lang: str = "zh") -> list[dict[str, Any]]
                 SELECT n.source
                 FROM news n
                 WHERE instr(',' || g.news_id || ',', ',' || n.id || ',') > 0
-                ORDER BY n.authority DESC
+                ORDER BY n.reputation DESC
                 LIMIT 1
               ) AS media,
               (
                 SELECT n.title
                 FROM news n
                 WHERE instr(',' || g.news_id || ',', ',' || n.id || ',') > 0
-                ORDER BY n.authority DESC
+                ORDER BY n.reputation DESC
                 LIMIT 1
               ) AS primary_title,
               (
                 SELECT n.full_text
                 FROM news n
                 WHERE instr(',' || g.news_id || ',', ',' || n.id || ',') > 0
-                ORDER BY n.authority DESC
+                ORDER BY n.reputation DESC
                 LIMIT 1
               ) AS primary_full_text,
               (
                 SELECT n.link
                 FROM news n
                 WHERE instr(',' || g.news_id || ',', ',' || n.id || ',') > 0
-                ORDER BY n.authority DESC
+                ORDER BY n.reputation DESC
                 LIMIT 1
               ) AS primary_link
             FROM grouped_news g
@@ -487,28 +487,28 @@ def fetch_news_detail(news_id: str, lang: str = "zh") -> dict[str, Any] | None:
                 SELECT n.source
                 FROM news n
                 WHERE instr(',' || g.news_id || ',', ',' || n.id || ',') > 0
-                ORDER BY n.authority DESC
+                ORDER BY n.reputation DESC
                 LIMIT 1
               ) AS media,
               (
                 SELECT n.title
                 FROM news n
                 WHERE instr(',' || g.news_id || ',', ',' || n.id || ',') > 0
-                ORDER BY n.authority DESC
+                ORDER BY n.reputation DESC
                 LIMIT 1
               ) AS primary_title,
               (
                 SELECT n.full_text
                 FROM news n
                 WHERE instr(',' || g.news_id || ',', ',' || n.id || ',') > 0
-                ORDER BY n.authority DESC
+                ORDER BY n.reputation DESC
                 LIMIT 1
               ) AS primary_full_text,
               (
                 SELECT n.link
                 FROM news n
                 WHERE instr(',' || g.news_id || ',', ',' || n.id || ',') > 0
-                ORDER BY n.authority DESC
+                ORDER BY n.reputation DESC
                 LIMIT 1
               ) AS primary_link
             FROM grouped_news g

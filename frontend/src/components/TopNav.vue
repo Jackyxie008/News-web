@@ -4,6 +4,7 @@ import gTranslateIcon from '@/assets/g_translate.svg'
 import ResetButton from '@/components/ResetButton.vue'
 import SelectPill from '@/components/SelectPill.vue'
 import SearchPill from '@/components/SearchPill.vue'
+import TimeRangePicker from '@/components/TimeRangePicker.vue'
 
 const props = defineProps<{
   lang: 'zh' | 'en'
@@ -12,6 +13,7 @@ const props = defineProps<{
   type: string | null
   continent: string | null
   country: string | null
+  timeRange: { start: string; end: string } | null
   typeOptions: { label: string; value: string }[]
   continentOptions: { label: string; value: string }[]
   countryOptions: { label: string; value: string }[]
@@ -24,6 +26,7 @@ const emit = defineEmits<{
   'update:type': [value: string | null]
   'update:continent': [value: string | null]
   'update:country': [value: string | null]
+  'update:timeRange': [value: { start: string; end: string } | null]
   reset: []
 }>()
 
@@ -73,7 +76,8 @@ function toggleLang() {
         </button>
       </div>
 
-      <div class="ml-auto flex items-center gap-2">
+      <!-- 右侧筛选控件 -->
+      <div class="ml-auto flex flex-1 items-center justify-end gap-2">
         <ResetButton :lang="props.lang" @click="emit('reset')" />
         <SelectPill
           :model-value="props.type"
@@ -93,6 +97,11 @@ function toggleLang() {
           :options="props.countryOptions"
           @update:model-value="(value) => emit('update:country', value)"
         />
+        <TimeRangePicker
+          :model-value="props.timeRange"
+          :lang="props.lang"
+          @update:model-value="(value) => emit('update:timeRange', value)"
+        />
         <div class="w-[360px]">
           <SearchPill
             :model-value="props.query"
@@ -100,16 +109,15 @@ function toggleLang() {
             @update:model-value="(value) => emit('update:query', value)"
           />
         </div>
+        <button
+          class="inline-flex h-9 w-9 items-center justify-center rounded-md bg-white/90 ring-1 ring-black/10 hover:bg-white"
+          type="button"
+          :aria-label="props.lang === 'en' ? 'Switch Language' : '切换语言'"
+          @click="toggleLang"
+        >
+          <img :src="gTranslateIcon" alt="g_translate" class="h-6 w-6" />
+        </button>
       </div>
-
-      <button
-        class="inline-flex h-9 w-9 items-center justify-center rounded-md bg-white/90 ring-1 ring-black/10 hover:bg-white"
-        type="button"
-        :aria-label="props.lang === 'en' ? 'Switch Language' : '切换语言'"
-        @click="toggleLang"
-      >
-        <img :src="gTranslateIcon" alt="g_translate" class="h-6 w-6" />
-      </button>
     </div>
   </header>
 </template>

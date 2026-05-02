@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-
 import asyncio          # 异步协程，并发爬取/请求
 import aiohttp          # 异步HTTP客户端，发网络请求
 import feedparser       # 解析 RSS / XML 订阅源
@@ -76,7 +75,7 @@ async def fetch(session, url):
         return None
 
 
-async def process_entry(session, entry, source, authority):
+async def process_entry(session, entry, source, reputation):
     """处理单个RSS条目，提取新闻详情"""
     link = entry.get("link")
     if not link:
@@ -94,7 +93,7 @@ async def process_entry(session, entry, source, authority):
 
     return {
         "source": source,
-        "authority": authority,
+        "reputation": reputation,
         "title": entry.get("title"),
         "link": link,
         "published": normalize_published_time(entry.get("published") or entry.get("updated")),
@@ -103,7 +102,7 @@ async def process_entry(session, entry, source, authority):
     }
 
 
-async def process_rss_source(session, rss_url, source, authority, content_can_be_crawled):
+async def process_rss_source(session, rss_url, source, reputation, content_can_be_crawled):
     """异步处理单个RSS源"""
     print(f"  爬取 URL: {rss_url}")
     
@@ -122,7 +121,7 @@ async def process_rss_source(session, rss_url, source, authority, content_can_be
     entries_to_process = feed.entries[:10] # 每个源只处理最新的10条
     
     if content_can_be_crawled:
-        tasks = [process_entry(session, entry, source, authority) for entry in entries_to_process]
+        tasks = [process_entry(session, entry, source, reputation) for entry in entries_to_process]
         results = await asyncio.gather(*tasks, return_exceptions=True)
         
         for res in results:
@@ -137,7 +136,7 @@ async def process_rss_source(session, rss_url, source, authority, content_can_be
             
             all_items.append({
                 "source": source,
-                "authority": authority,
+                "reputation": reputation,
                 "title": entry.get("title"),
                 "link": entry.get("link"),
                 "published": normalize_published_time(entry.get("published") or entry.get("updated")),
@@ -148,18 +147,37 @@ async def process_rss_source(session, rss_url, source, authority, content_can_be
     return all_items
 
 
-async def crawler(conn=None):
+async def crawler():
     """
     主函数：读取 feeds.json，爬取每个 RSS 源，直接插入数据库
-    :param conn: 可选外部传入的数据库连接，不传则内部创建
+    同时调用非RSS源的爬虫（如澳门日报）
     """
     feeds_file = Path("backend/crawlers/feeds.json")
     if not feeds_file.exists():
         print(f"配置文件不存在: {feeds_file}")
-        return
 
     with open(feeds_file, "r", encoding="utf-8") as f:
         feeds = json.load(f)
+
+    # 打开数据库连接
+    db_path = Path("backend/data/data.db")
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    
+    # 确保表存在
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS news (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            source TEXT,
+            reputation INTEGER,
+            title TEXT,
+            link TEXT UNIQUE,
+            published TEXT,
+            full_text TEXT,
+            image_url TEXT
+        )
+    ''')
+    conn.commit()
 
     async with aiohttp.ClientSession() as session:
         all_tasks = []
@@ -170,7 +188,7 @@ async def crawler(conn=None):
                 continue
 
             source = feed_config.get("source")
-            authority = feed_config.get("authority", 0)
+            reputation = feed_config.get("reputation", 0)
             urls = feed_config.get("rss_url")
             content_can_be_crawled = feed_config.get("content_can_be_crawled", True)
             
@@ -179,7 +197,7 @@ async def crawler(conn=None):
                 continue
 
             for rss_url in urls:
-                task = process_rss_source(session, rss_url, source, authority, content_can_be_crawled)
+                task = process_rss_source(session, rss_url, source, reputation, content_can_be_crawled)
                 all_tasks.append(task)
 
         sem = asyncio.Semaphore(5)
@@ -190,7 +208,7 @@ async def crawler(conn=None):
         
         bounded_tasks = [bounded_task(task) for task in all_tasks]
         
-        print(f"开始爬取，共 {len(bounded_tasks)} 个RSS源，最大并发数: 5")
+        print(f"开始爬取RSS源，共 {len(bounded_tasks)} 个源，最大并发数: 5")
         
         results = await asyncio.gather(*bounded_tasks, return_exceptions=True)
         
@@ -199,70 +217,67 @@ async def crawler(conn=None):
             if not isinstance(result, Exception) and result:
                 all_news.extend(result)
         
-        print(f"\n✅ 爬取完成，总共获取 {len(all_news)} 条新闻")
+        print(f"\n✅ RSS爬取完成，总共获取 {len(all_news)} 条新闻")
         
-        # 处理数据库连接
-        local_conn = None
-        if conn is None:
-            db_path = Path("backend/data/data.db")
-            local_conn = sqlite3.connect(db_path)
-            cursor = local_conn.cursor()
-        else:
-            cursor = conn.cursor()
+        # 插入RSS爬取的新闻到数据库
+        if all_news:
+            # 先批量查询所有链接，过滤已经存在的新闻
+            all_links = [item['link'] for item in all_news]
+            placeholders = ','.join(['?'] * len(all_links))
+            
+            cursor.execute(f"SELECT link FROM news WHERE link IN ({placeholders})", all_links)
+            existing_links = set(row[0] for row in cursor.fetchall())
+            
+            # 内存层先去重
+            seen_links = set()
+            unique_items = []
+            for item in all_news:
+                if item['link'] not in existing_links and item['link'] not in seen_links:
+                    seen_links.add(item['link'])
+                    unique_items.append((
+                        item['source'],
+                        item['reputation'],
+                        item['title'],
+                        item['link'],
+                        item['published'],
+                        item['full_text'],
+                        item['image_url']
+                    ))
+            
+            if unique_items:
+                cursor.executemany('''
+                    INSERT OR IGNORE INTO news (source, reputation, title, link, published, full_text, image_url)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                ''', unique_items)
+                rss_inserted = cursor.rowcount
+                print(f"✅ RSS新闻插入完成，新增加 {rss_inserted} 条新闻")
         
-        # 确保表存在，第一次运行自动创建
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS news (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                source TEXT,
-                authority INTEGER,
-                title TEXT,
-                link TEXT UNIQUE,
-                published TEXT,
-                full_text TEXT,
-                image_url TEXT
-            )
-        ''')
-        if local_conn:
-            local_conn.commit()
+        # 调用澳门日报爬虫（共享同一个数据库连接）
+        print("\n开始爬取澳门日报...")
+        from crawlers.Macao_Daily_News import crawl_macao_daily_news
+        macao_news_items = await crawl_macao_daily_news(cursor)
         
-        # 先批量查询所有链接，过滤已经存在的新闻
-        all_links = [item['link'] for item in all_news]
-        placeholders = ','.join(['?'] * len(all_links))
+        if macao_news_items:
+            cursor.executemany('''
+                INSERT OR IGNORE INTO news (source, reputation, title, link, published, full_text, image_url)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''', macao_news_items)
+            macao_inserted = cursor.rowcount
+            print(f"  澳门日报插入完成，新增加 {macao_inserted} 条新闻")
+            all_news.extend([{
+                'source': item[0],
+                'reputation': item[1],
+                'title': item[2],
+                'link': item[3],
+                'published': item[4],
+                'full_text': item[5],
+                'image_url': item[6]
+            } for item in macao_news_items])
         
-        cursor.execute(f"SELECT link FROM news WHERE link IN ({placeholders})", all_links)
-        existing_links = set(row[0] for row in cursor.fetchall())
+        conn.commit()
+        conn.close()
         
-        # 内存层先去重 同一批次内相同link只保留一个
-        seen_links = set()
-        unique_items = []
-        for item in all_news:
-            if item['link'] not in existing_links and item['link'] not in seen_links:
-                seen_links.add(item['link'])
-                unique_items.append((
-                    item['source'],
-                    item['authority'],
-                    item['title'],
-                    item['link'],
-                    item['published'],
-                    item['full_text'],
-                    item['image_url']
-                ))
-        
-        # 使用 INSERT OR IGNORE 遇到唯一约束冲突自动跳过 不抛出错误
-        cursor.executemany('''
-            INSERT OR IGNORE INTO news (source, authority, title, link, published, full_text, image_url)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        ''', unique_items)
-        
-        # 获得实际成功插入的行数
-        inserted = cursor.rowcount
-        
-        if local_conn:
-            local_conn.commit()
-            local_conn.close()
-        
-        print(f"✅ 数据库插入完成，新增加 {inserted} 条新闻，重复 {len(all_news) - inserted} 条")
+        print(f"\n✅ 数据库操作完成")
 
 if __name__ == "__main__":
     asyncio.run(crawler())

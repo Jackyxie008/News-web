@@ -2,21 +2,21 @@
     {
         "source": "BBC",
         "rss_url": ["https://feeds.bbci.co.uk/news/world/rss.xml"],
-        "authority": 0.9,
+        "reputation": 87.00,
         "content_can_be_crawled": true,
         "crawl": true
     },
     {
         "source": "AP",
         "rss_url": ["https://feedx.net/rss/ap.xml"],
-        "authority": 1.0,
+        "reputation": 76.00,
         "content_can_be_crawled": true,
         "crawl": true
     },
     {
         "source": "Reuters",
         "rss_url": ["https://news.google.com/rss/search?q=source:reuters.com+when:12h&hl=en-US&gl=US&ceid=US:en"],
-        "authority": 1.0,
+        "reputation": 84.00,
         "content_can_be_crawled": false,
         "crawl": false
     },
@@ -24,13 +24,13 @@
         "source": "AFP",
         "rss_url": ["https://rss.datuan.dev/yahoo/news/provider/hk/afp.com.hk"],
         "content_can_be_crawled": false,
-        "authority": 1.0,
+        "reputation": 63.00,
         "crawl": true
     },
     {
         "source": "CNN",
         "rss_url": ["https://flipboard.com/@cnn/world-news-4kh9bmbmz.rss"],
-        "authority": 0.9,
+        "reputation": 79.00,
         "content_can_be_crawled": true,
         "crawl": true
     },
@@ -38,28 +38,28 @@
         "source": "Al_Jazeera",
         "rss_url": ["https://www.aljazeera.com/xml/rss/all.xml"],
         "content_can_be_crawled": true,
-        "authority": 0.9,
+        "reputation": 76.00,
         "crawl": true
     },
     {
         "source": "DW",
         "rss_url": ["https://rss.dw.com/rdf/rss-en-top"],
         "content_can_be_crawled": true,
-        "authority": 0.9,
+        "reputation": 68.75,
         "crawl": true
     },
     {
         "source": "CCTV",
         "rss_url": ["https://rss.datuan.dev/cctv/world"],
         "content_can_be_crawled": false,
-        "authority": 0.9,
+        "reputation": 72.50,
         "crawl": true
     },
     {
-        "source": "News_gov_mo",
-        "rss_url": ["https://govinfohub.gcs.gov.mo/api/rss/n/zh-hant"],
-        "content_can_be_crawled": false,
-        "authority": 0.1,
+        "source": "TASS",
+        "rss_url": ["https://tass.com/rss/v2.xml?section=world"],
+        "content_can_be_crawled": true,
+        "reputation": 74.50,
         "crawl": true
     }
 ]

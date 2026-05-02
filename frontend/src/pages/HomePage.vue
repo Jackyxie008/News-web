@@ -160,6 +160,7 @@ watch(lang, async (nextLang) => {
         :type="filter.type"
         :continent="filter.continent"
         :country="filter.country"
+        :time-range="filter.timeRange"
         :type-options="typeOptions"
         :continent-options="continentOptions"
         :country-options="countryOptions"
@@ -169,6 +170,7 @@ watch(lang, async (nextLang) => {
         @update:type="(value) => (filter.type = value)"
         @update:continent="(value) => (filter.continent = value)"
         @update:country="(value) => (filter.country = value)"
+        @update:time-range="(value) => (filter.timeRange = value)"
         @reset="onReset"
       />
     </div>

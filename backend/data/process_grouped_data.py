@@ -94,14 +94,14 @@ async def get_grouped_news(conn, id):
     if not news_ids:
         return "", "", 0
     
-    # 2. 按authority从高到低排序
+    # 2. 按reputation从高到低排序
     LIMIT_COUNT = 2
     placeholders = ','.join(['?'] * len(news_ids))
     query = f"""
         SELECT title, full_text 
         FROM news 
         WHERE id IN ({placeholders}) 
-        ORDER BY authority DESC
+        ORDER BY reputation DESC
         LIMIT {LIMIT_COUNT}
     """
     
@@ -316,7 +316,7 @@ async def worker(name, platform_key, queue, client, db_conn):
             你是一名专业的新闻编辑与GIS数据专家。任务：将新闻标准化为全球GIS格式。
 
             ### 任务流程
-            1. **摘要**：将新闻压缩为300-500字的流畅段落
+            1. **摘要**：将新闻处理成500字以下的流畅段落
             2. **标题**：分别撰写专业的中英文标题
             3. **提取地点**：按下方规则提取核心事件地点
             4. **提取关键词**：3-6个中英文关键词
@@ -334,7 +334,6 @@ async def worker(name, platform_key, queue, client, db_conn):
 
             **排除**以下情况（即使出现地点名词，也不提取）：
             - 背景/来源地（如“中方在记者会上表示” → 不提取北京）
-            - 总部/机构所在地（如“苹果库比蒂诺总部宣布” → 不提取库比蒂诺）
             - 历史/背景地点（如“2020年伦敦发现...” → 不提取伦敦）
             - 未来目的地（如“将于下周访问东京” → 不提取东京）
             - 国籍/出生地（如“法国总统” → 不提取法国）

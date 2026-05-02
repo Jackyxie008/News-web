@@ -87,10 +87,10 @@ def get_new_news_data():
     
     if existing_ids:
         placeholders = ','.join(['?'] * len(existing_ids))
-        query = f"SELECT id, title, full_text, published, link, source, authority, image_url FROM news WHERE id NOT IN ({placeholders})"
+        query = f"SELECT id, title, full_text, published, link, source, reputation, image_url FROM news WHERE id NOT IN ({placeholders})"
         df = pd.read_sql_query(query, conn, params=tuple(existing_ids))
     else:
-        df = pd.read_sql_query("SELECT id, title, full_text, published, link, source, authority, image_url FROM news", conn)
+        df = pd.read_sql_query("SELECT id, title, full_text, published, link, source, reputation, image_url FROM news", conn)
     
     conn.close()
     return df
@@ -103,7 +103,7 @@ def generate_vectors(df):
     vectors = model.encode(texts, show_progress_bar=False, batch_size=32)
     return vectors
 
-def update_group_news_ids(group_id, new_news_ids, new_links, new_published, new_sources, new_authorities, new_image_urls, new_group_vector=None):
+def update_group_news_ids(group_id, new_news_ids, new_links, new_published, new_sources, new_reputations, new_image_urls, new_group_vector=None):
     """向已有分组追加新闻ID，同时加权更新分组中心向量"""
     db_path = Path("backend/data/data.db")
     conn = sqlite3.connect(db_path)
@@ -149,7 +149,7 @@ def update_group_news_ids(group_id, new_news_ids, new_links, new_published, new_
             seen_links.add(link)
             unique_pairs.append( (source, link) )
     
-    # 按权威性排序
+    # 按声誉排序
     merged_parts = []
     for source, link in unique_pairs:
         merged_parts.append(source)
@@ -162,8 +162,8 @@ def update_group_news_ids(group_id, new_news_ids, new_links, new_published, new_
     all_published.append(new_published)
     merged_published = min(all_published)
     
-    # 选择最佳图片（比较新旧图片的权威性，保留最高的）
-    max_authority = -1
+    # 选择最佳图片（比较新旧图片的声誉，保留最高的）
+    max_reputation = -1
     best_image_url = None
     best_image_source = None
     
@@ -176,8 +176,8 @@ def update_group_news_ids(group_id, new_news_ids, new_links, new_published, new_
     # 检查新图片
     for i in range(len(new_image_urls)):
         if new_image_urls[i] and pd.notna(new_image_urls[i]) and new_image_urls[i].strip() != '':
-            if new_authorities[i] > max_authority:
-                max_authority = new_authorities[i]
+            if new_reputations[i] > max_reputation:
+                max_reputation = new_reputations[i]
                 best_image_url = new_image_urls[i]
                 best_image_source = new_sources[i]
     
@@ -209,7 +209,7 @@ def update_group_news_ids(group_id, new_news_ids, new_links, new_published, new_
     conn.commit()
     conn.close()
 
-def create_new_group(news_ids, links, published, vector, image_url, image_source, sources, authorities):
+def create_new_group(news_ids, links, published, vector, image_url, image_source, sources, reputations):
     """创建新的分组"""
     db_path = Path("backend/data/data.db")
     conn = sqlite3.connect(db_path)
@@ -238,13 +238,13 @@ def create_new_group(news_ids, links, published, vector, image_url, image_source
     conn.commit()
     conn.close()
 
-def group_news(conn=None):
+def group_news():
     """增量新闻聚类：两阶段算法，先内部聚类再与已有分组匹配"""
     # 创建表
-    create_grouped_news_table(conn)
+    create_grouped_news_table()
 
     # 获取新新闻数据
-    df = get_new_news_data(conn)
+    df = get_new_news_data()
 
     if df.empty:
         print("✅ 没有新的新闻需要聚类")
@@ -269,7 +269,7 @@ def group_news(conn=None):
         link = df.iloc[idx]['link']
         published = df.iloc[idx]['published']
         source = df.iloc[idx]['source']
-        authority = df.iloc[idx]['authority']
+        reputation = df.iloc[idx]['reputation']
         image_url = df.iloc[idx]['image_url']
         
         best_group_idx = None
@@ -284,19 +284,19 @@ def group_news(conn=None):
         
         # 匹配成功则加入临时组
         if best_group_idx is not None and best_similarity >= SIMILARITY_THRESHOLD:
-            group_vector, news_ids, links, publishes, sources, authorities, image_urls = temp_groups[best_group_idx]
+            group_vector, news_ids, links, publishes, sources, reputations, image_urls = temp_groups[best_group_idx]
             news_ids.append(news_id)
             links.append(link)
             publishes.append(published)
             sources.append(source)
-            authorities.append(authority)
+            reputations.append(reputation)
             image_urls.append(image_url)
             # 更新组中心向量（平均值）
             new_vector = (group_vector * (len(news_ids)-1) + vector) / len(news_ids)
-            temp_groups[best_group_idx] = (new_vector, news_ids, links, publishes, sources, authorities, image_urls)
+            temp_groups[best_group_idx] = (new_vector, news_ids, links, publishes, sources, reputations, image_urls)
         else:
             # 创建新临时组
-            temp_groups.append( (vector, [news_id], [link], [published], [source], [authority], [image_url]) )
+            temp_groups.append( (vector, [news_id], [link], [published], [source], [reputation], [image_url]) )
     
     print(f"新新闻内部聚类完成，合并为 {len(temp_groups)} 个临时组")
     
@@ -305,24 +305,24 @@ def group_news(conn=None):
     new_groups_count = 0
     merged_groups_count = 0
     
-    for group_vector, news_ids, links, publishes, sources, authorities, image_urls in temp_groups:
+    for group_vector, news_ids, links, publishes, sources, reputations, image_urls in temp_groups:
         published = min(publishes)
         
         # 选择最佳图片和媒体
         best_image_url = None
         best_image_source = None
-        max_authority = -1
+        max_reputation = -1
         
-        # 只在有图片的新闻中选权威性最高的
+        # 只在有图片的新闻中选声誉最高的
         for i in range(len(image_urls)):
             if image_urls[i] and pd.notna(image_urls[i]) and image_urls[i].strip() != '':
-                if authorities[i] > max_authority:
-                    max_authority = authorities[i]
+                if reputations[i] > max_reputation:
+                    max_reputation = reputations[i]
                     best_image_url = image_urls[i]
                     best_image_source = sources[i]
         
         # 收集所有来源媒体（去重）
-        all_sources = ','.join(sorted(list(set(sources)), key=lambda s: -authorities[sources.index(s)]))
+        all_sources = ','.join(sorted(list(set(sources)), key=lambda s: -reputations[sources.index(s)]))
         
         best_group_id = None
         best_similarity = 0
@@ -336,11 +336,11 @@ def group_news(conn=None):
         
         # 超过阈值则合并到已有分组
         if best_group_id is not None and best_similarity >= SIMILARITY_THRESHOLD:
-            update_group_news_ids(best_group_id, news_ids, links, published, sources, authorities, image_urls, group_vector)
+            update_group_news_ids(best_group_id, news_ids, links, published, sources, reputations, image_urls, group_vector)
             merged_groups_count += len(news_ids)
         else:
             # 否则创建新分组
-            create_new_group(news_ids, links, published, group_vector, best_image_url, best_image_source, sources, authorities)
+            create_new_group(news_ids, links, published, group_vector, best_image_url, best_image_source, sources, reputations)
             new_groups_count += 1
     
     print(f"✅ 增量聚类完成：合并 {merged_groups_count} 条到已有分组，创建 {new_groups_count} 个新分组")
