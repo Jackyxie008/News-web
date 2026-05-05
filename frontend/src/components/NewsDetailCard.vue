@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import type { NewsDetail } from '@/lib/news'
 import closeIcon from '@/assets/icon_x.svg'
 import locationOnIcon from '@/assets/location_on.svg'
@@ -12,7 +13,15 @@ const props = defineProps<{
 const emit = defineEmits<{
   close: []
   locate: []
+  'locate-country': [country: string]
 }>()
+
+// 获取所有地点（用分号分隔，每个分号分隔的内容就是一个地点）
+const locations = computed(() => {
+  // 只使用 location 字段
+  if (!props.detail?.location) return []
+  return props.detail.location.split(/[;；]/).map((s) => s.trim()).filter(Boolean)
+})
 </script>
 
 <template>
@@ -25,7 +34,7 @@ const emit = defineEmits<{
         <h2 class="break-words text-[34px] font-semibold leading-[1.2] text-black">
           {{ props.detail?.title || (props.lang === 'en' ? 'News Title' : '新闻标题') }}
         </h2>
-        <div class="flex flex-none flex-col items-center gap-1">
+        <div class="flex flex-none items-center">
           <button
             class="inline-flex h-8 w-8 items-center justify-center rounded-md bg-transparent hover:bg-zinc-100"
             type="button"
@@ -34,21 +43,30 @@ const emit = defineEmits<{
           >
             <img :src="closeIcon" alt="X" class="h-5 w-5" />
           </button>
-          <button
-            class="inline-flex h-8 w-8 items-center justify-center rounded-md bg-transparent hover:bg-zinc-100"
-            type="button"
-            aria-label="定位到地图"
-            @click="emit('locate')"
-          >
-            <img :src="locationOnIcon" alt="location_on" class="h-6 w-6" />
-          </button>
         </div>
       </div>
 
       <div class="flex-1 space-y-4 overflow-y-auto pr-1 text-black">
         <section>
-          <p class="mb-1 text-base font-medium">{{ props.lang === 'en' ? 'Location' : '地点' }}</p>
-          <p class="text-sm text-zinc-700">{{ props.detail?.location || props.detail?.country || '-' }}</p>
+          <p class="mb-2 text-base font-medium">{{ props.lang === 'en' ? 'Location' : '地点' }}</p>
+          <div class="flex flex-wrap gap-2">
+            <button
+              v-for="loc in locations"
+              :key="loc"
+              class="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-3 py-1 text-sm text-zinc-700 hover:bg-zinc-200"
+              type="button"
+              @click="emit('locate-country', loc)"
+            >
+              <img :src="locationOnIcon" alt="location" class="h-4 w-4" />
+              {{ loc }}
+            </button>
+            <span
+              v-if="locations.length === 0"
+              class="text-sm text-zinc-700"
+            >
+              -
+            </span>
+          </div>
         </section>
 
         <section>
@@ -105,6 +123,8 @@ const emit = defineEmits<{
             {{ props.detail?.fullText?.trim() || props.detail?.summary || '-' }}
           </p>
         </section>
+
+        <div class="text-center text-sm text-zinc-400">{{ props.lang === 'en' ? '✦ AI summary ✦' : '✦ AI总结 ✦' }}</div>
 
         <section>
           <p class="mb-1 text-base font-medium">{{ props.lang === 'en' ? 'Links' : '链接' }}</p>

@@ -15,7 +15,9 @@ export type NewsItem = {
   heat: number
   lat: number
   lng: number
+  location?: string
   locations?: { lat: number; lng: number; name?: string }[]
+  imageUrl?: string
 }
 
 export type NewsDetail = NewsItem & {
@@ -46,6 +48,27 @@ export type LineDatum = { date: string; value: number }
 export type ChartData = {
   pie: PieDatum[]
   line: LineDatum[]
+}
+
+// 新闻类型映射
+export const NEWS_TYPE_MAP: Record<string, { zh: string; en: string }> = {
+  politics: { zh: '政治', en: 'Politics' },
+  military: { zh: '军事', en: 'Military' },
+  disaster: { zh: '灾害', en: 'Disaster' },
+  security: { zh: '安全', en: 'Security' },
+  health: { zh: '健康', en: 'Health' },
+  finance: { zh: '金融', en: 'Finance' },
+  society: { zh: '社会', en: 'Society' },
+  science: { zh: '科学', en: 'Science' },
+  technology: { zh: '科技', en: 'Technology' },
+  energy: { zh: '能源', en: 'Energy' },
+  environment: { zh: '环境', en: 'Environment' },
+  sports: { zh: '体育', en: 'Sports' },
+  entertainment: { zh: '娱乐', en: 'Entertainment' },
+}
+
+export function getNewsTypeLabel(type: string, lang: Lang = 'zh'): string {
+  return NEWS_TYPE_MAP[type]?.[lang] ?? type
 }
 
 const API_BASE = (import.meta.env.VITE_API_BASE ?? '').replace(/\/$/, '')
@@ -267,20 +290,28 @@ const citySeeds = [
 ]
 
 const titles: Record<string, string[]> = {
-  政治: ['峰会举行', '议会讨论', '外交会谈', '政策发布'],
-  经济: ['数据公布', '市场波动', '投资增长', '贸易谈判'],
-  科技: ['新品发布', '研发突破', '投资回暖', '产业合作'],
-  体育: ['赛事开幕', '焦点战', '纪录刷新', '转会动态'],
-  文化: ['艺术展览', '文化节', '交流活动', '遗产保护'],
+  politics: ['峰会举行', '议会讨论', '外交会谈', '政策发布'],
+  military: ['军演开始', '武器测试', '军事合作', '国防预算'],
+  disaster: ['灾害发生', '紧急救援', '损失报告', '预警发布'],
+  security: ['安全事件', '安保升级', '恐怖袭击', '网络安全'],
+  health: ['疫情通报', '疫苗接种', '医疗突破', '健康警报'],
+  finance: ['市场波动', '投资增长', '贸易谈判', '经济数据'],
+  society: ['社会热点', '民生问题', '教育改革', '人口动态'],
+  science: ['科研突破', '实验成果', '学术会议', '科学发现'],
+  technology: ['新品发布', '技术革新', '行业合作', '创新应用'],
+  energy: ['能源转型', '油价波动', '新能源开发', '供电紧张'],
+  environment: ['环境危机', '气候变化', '污染治理', '生态保护'],
+  sports: ['赛事开幕', '焦点战', '纪录刷新', '转会动态'],
+  entertainment: ['影视上映', '明星动态', '颁奖典礼', '娱乐八卦'],
 }
 
 const medias = ['新闻媒体', '环球观察', '今日快讯', '深度报道']
-const types = ['政治', '经济', '科技', '体育', '文化']
 
 export const mockNews: NewsItem[] = Array.from({ length: 60 }).map((_, i) => {
   const seed = citySeeds[i % citySeeds.length]
-  const t = types[i % types.length]
-  const title = `${seed.country}${titles[t][i % titles[t].length]}`
+  const typeKeys = Object.keys(NEWS_TYPE_MAP)
+  const type = typeKeys[i % typeKeys.length]
+  const title = `${seed.country}${titles[type][i % titles[type].length]}`
   const media = medias[i % medias.length]
   const heat = 40 + ((i * 7) % 60)
   const ts = now - day * (i % 28) - (i % 12) * 60 * 60 * 1000
@@ -290,7 +321,7 @@ export const mockNews: NewsItem[] = Array.from({ length: 60 }).map((_, i) => {
     media,
     seed.continent,
     seed.country,
-    t,
+    type,
     heat,
     seed.lat,
     seed.lng,

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { List } from 'lucide-vue-next'
 import gTranslateIcon from '@/assets/g_translate.svg'
 import ResetButton from '@/components/ResetButton.vue'
@@ -30,24 +32,62 @@ const emit = defineEmits<{
   reset: []
 }>()
 
-function onMenu() {}
+const router = useRouter()
+const menuOpen = ref(false)
 
 function toggleLang() {
   emit('update:lang', props.lang === 'zh' ? 'en' : 'zh')
 }
+
+function toggleMenu() {
+  menuOpen.value = !menuOpen.value
+}
+
+function closeMenu() {
+  menuOpen.value = false
+}
+
+function navigateTo(path: string) {
+  router.push(path)
+  closeMenu()
+}
+
+const menuItems = [
+  { key: 'home', path: '/', zh: '主页', en: 'Home' },
+  { key: 'reader', path: '/reader', zh: '新闻阅读器', en: 'News Reader' },
+]
 </script>
 
 <template>
   <header class="h-[61px] bg-[#d9d9d9]">
     <div class="mx-auto flex h-full max-w-[1440px] items-center gap-2 px-2">
-      <button
-        class="inline-flex h-[27px] w-[27px] items-center justify-center text-black hover:opacity-80"
-        type="button"
-        aria-label="菜单"
-        @click="onMenu"
-      >
-        <List class="h-[27px] w-[27px]" />
-      </button>
+      <!-- 菜单按钮和下拉菜单 -->
+      <div class="relative">
+        <button
+          class="inline-flex h-[27px] w-[27px] items-center justify-center text-black hover:opacity-80"
+          type="button"
+          aria-label="菜单"
+          @click="toggleMenu"
+        >
+          <List class="h-[27px] w-[27px]" />
+        </button>
+
+        <!-- 下拉菜单 -->
+        <div
+          v-if="menuOpen"
+          class="absolute left-0 top-full z-50 mt-1 min-w-[160px] rounded-lg bg-white shadow-lg ring-1 ring-black/10"
+        >
+          <button
+            v-for="item in menuItems"
+            :key="item.key"
+            class="flex w-full items-center px-4 py-3 text-left text-sm text-zinc-700 hover:bg-zinc-50"
+            type="button"
+            @click="navigateTo(item.path)"
+          >
+            {{ item.zh }}
+          </button>
+        </div>
+      </div>
 
       <div class="ml-1 inline-flex h-[30px] overflow-hidden">
         <button

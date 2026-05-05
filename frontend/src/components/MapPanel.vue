@@ -9,6 +9,7 @@ const props = defineProps<{
   selectedId: string | null
   lang: 'zh' | 'en'
   focusRequestId?: number
+  flyToLocation?: string | null
 }>()
 
 const emit = defineEmits<{ select: [news: NewsItem | null] }>()
@@ -20,6 +21,12 @@ const tileLayer = ref<L.TileLayer | null>(null)
 const markersByNewsId = new Map<string, L.Marker[]>()
 const markerToNews = new WeakMap<L.Marker, NewsItem>()
 
+// 跟踪当前打开的聚类弹窗
+const openCluster = ref<L.MarkerCluster | null>(null)
+
+// 跟踪当前鼠标是否在弹窗内
+const isMouseOverPopup = ref(false)
+
 const selected = computed(() => props.items.find((n) => n.id === props.selectedId) ?? null)
 
 function googleTileUrl() {
@@ -30,8 +37,8 @@ function googleTileUrl() {
 function markerIcon(active: boolean) {
   const dot = active ? 12 : 10
   const halo = active ? 26 : 22
-  const bg = active ? '#dc2626' : '#ef4444'
-  const haloBg = active ? 'rgba(220, 38, 38, 0.28)' : 'rgba(239, 68, 68, 0.22)'
+  const bg = active ? '#ef4444' : '#f97316'
+  const haloBg = active ? 'rgba(239, 68, 68, 0.28)' : 'rgba(249, 115, 22, 0.22)'
   return L.divIcon({
     className: 'news-marker-icon',
     html: `
@@ -45,55 +52,71 @@ function markerIcon(active: boolean) {
   })
 }
 
-function popupNode(n: NewsItem) {
+function formatFullDate(dateStr: string, lang: 'zh' | 'en') {
+  if (!dateStr) return '-'
+  const dateLabel = lang === 'en' ? 'Time' : '时间'
+  return `${dateLabel}: ${dateStr}`
+}
+
+function getLocationDisplay(news: NewsItem): string {
+  return news.location || news.country || '-'
+}
+
+function singlePopupNode(n: NewsItem) {
   const wrap = document.createElement('div')
-  wrap.style.width = '280px'
+  wrap.className = 'single-news-popup-content'
+  wrap.style.width = '300px'
   wrap.style.fontFamily = 'ui-sans-serif, system-ui'
+  wrap.style.padding = '8px'
 
   const title = document.createElement('div')
   title.textContent = n.title
   title.style.fontWeight = '700'
   title.style.fontSize = '14px'
   title.style.lineHeight = '18px'
-  title.style.marginBottom = '6px'
+  title.style.marginBottom = '4px'
+  title.style.color = '#18181b'
 
-  const meta = document.createElement('div')
-  meta.textContent = `${n.date} · ${n.media} · ${n.country}`
-  meta.style.color = '#71717a'
-  meta.style.fontSize = '12px'
-  meta.style.lineHeight = '16px'
-  meta.style.marginBottom = '10px'
+  const dateText = document.createElement('div')
+  dateText.textContent = formatFullDate(n.date, props.lang)
+  dateText.style.color = '#71717a'
+  dateText.style.fontSize = '12px'
+  dateText.style.lineHeight = '16px'
 
-  const summary = document.createElement('div')
-  summary.textContent = n.summary
-  summary.style.color = '#3f3f46'
-  summary.style.fontSize = '12px'
-  summary.style.lineHeight = '16px'
+  const locationText = document.createElement('div')
+  locationText.textContent = getLocationDisplay(n)
+  locationText.style.color = '#71717a'
+  locationText.style.fontSize = '12px'
+  locationText.style.lineHeight = '16px'
+  locationText.style.marginTop = '2px'
 
   wrap.appendChild(title)
-  wrap.appendChild(meta)
-  wrap.appendChild(summary)
+  wrap.appendChild(dateText)
+  wrap.appendChild(locationText)
   return wrap
 }
 
 function clusterPopupNode(cluster: L.MarkerCluster) {
   const wrap = document.createElement('div')
-  wrap.style.width = '300px'
+  wrap.className = 'cluster-popup-content'
+  wrap.style.width = '320px'
   wrap.style.fontFamily = 'ui-sans-serif, system-ui'
+  wrap.style.maxHeight = '320px'
+  wrap.style.display = 'flex'
+  wrap.style.flexDirection = 'column'
 
-  const title = document.createElement('div')
-  title.textContent = props.lang === 'en' ? `News (${cluster.getChildCount()})` : `新闻 (${cluster.getChildCount()})`
-  title.style.fontWeight = '700'
-  title.style.fontSize = '13px'
-  title.style.marginBottom = '8px'
-  wrap.appendChild(title)
+  const header = document.createElement('div')
+  header.textContent = props.lang === 'en' ? `News (${cluster.getChildCount()})` : `新闻 (${cluster.getChildCount()})`
+  header.style.fontWeight = '700'
+  header.style.fontSize = '13px'
+  header.style.padding = '8px 8px 4px'
+  header.style.color = '#18181b'
+  wrap.appendChild(header)
 
   const list = document.createElement('div')
-  list.style.maxHeight = '220px'
+  list.style.maxHeight = '260px'
   list.style.overflowY = 'auto'
-  list.style.display = 'flex'
-  list.style.flexDirection = 'column'
-  list.style.gap = '4px'
+  list.style.padding = '4px 8px 8px'
 
   const childMarkers = cluster.getAllChildMarkers() as L.Marker[]
   const seenNews = new Set<string>()
@@ -107,11 +130,15 @@ function clusterPopupNode(cluster: L.MarkerCluster) {
     btn.type = 'button'
     btn.style.width = '100%'
     btn.style.textAlign = 'left'
-    btn.style.padding = '6px 8px'
-    btn.style.borderRadius = '8px'
+    btn.style.padding = '8px'
+    btn.style.marginTop = '4px'
+    btn.style.borderRadius = '6px'
     btn.style.border = '0'
     btn.style.cursor = 'pointer'
     btn.style.background = 'rgba(244, 244, 245, 0.9)'
+    btn.style.display = 'flex'
+    btn.style.flexDirection = 'column'
+    btn.style.gap = '2px'
     btn.onmouseenter = () => {
       btn.style.background = 'rgba(228, 228, 231, 0.95)'
     }
@@ -127,15 +154,20 @@ function clusterPopupNode(cluster: L.MarkerCluster) {
     titleText.style.color = '#18181b'
 
     const dateText = document.createElement('div')
-    const dateLabel = props.lang === 'en' ? 'Published' : '发布时间'
-    dateText.textContent = `${dateLabel}: ${news.date || '-'}`
-    dateText.style.marginTop = '2px'
+    dateText.textContent = formatFullDate(news.date, props.lang)
     dateText.style.fontSize = '11px'
     dateText.style.lineHeight = '14px'
     dateText.style.color = '#71717a'
 
+    const locationText = document.createElement('div')
+    locationText.textContent = getLocationDisplay(news)
+    locationText.style.fontSize = '11px'
+    locationText.style.lineHeight = '14px'
+    locationText.style.color = '#71717a'
+
     btn.appendChild(titleText)
     btn.appendChild(dateText)
+    btn.appendChild(locationText)
 
     btn.onclick = () => {
       emit('select', news)
@@ -148,6 +180,7 @@ function clusterPopupNode(cluster: L.MarkerCluster) {
     empty.textContent = props.lang === 'en' ? 'No news' : '暂无新闻'
     empty.style.fontSize = '12px'
     empty.style.color = '#71717a'
+    empty.style.padding = '8px'
     list.appendChild(empty)
   }
 
@@ -156,20 +189,43 @@ function clusterPopupNode(cluster: L.MarkerCluster) {
 }
 
 function openClusterPopup(cluster: L.MarkerCluster) {
+  isMouseOverPopup.value = false
   const content = clusterPopupNode(cluster)
+  
+  // 添加鼠标悬停事件到弹窗容器
+  setTimeout(() => {
+    const popupContainer = cluster.getPopup()?.getElement()
+    if (popupContainer) {
+      popupContainer.addEventListener('mouseenter', () => {
+        isMouseOverPopup.value = true
+      })
+      popupContainer.addEventListener('mouseleave', () => {
+        isMouseOverPopup.value = false
+      })
+    }
+  }, 0)
+  
   if (cluster.getPopup()) {
     cluster.setPopupContent(content)
   } else {
     cluster.bindPopup(content, {
       autoPan: true,
       closeButton: true,
-      maxWidth: 340,
+      maxWidth: 360,
       closeOnClick: false,
       autoClose: true,
       className: 'cluster-news-popup',
     })
   }
+  openCluster.value = cluster
   cluster.openPopup()
+}
+
+function closeClusterPopup() {
+  if (openCluster.value && openCluster.value.isPopupOpen()) {
+    openCluster.value.closePopup()
+  }
+  openCluster.value = null
 }
 
 function normalizeCoords(lat: number, lng: number): [number, number] | null {
@@ -177,7 +233,6 @@ function normalizeCoords(lat: number, lng: number): [number, number] | null {
   const lngOk = lng >= -180 && lng <= 180
   if (latOk && lngOk) return [lat, lng]
 
-  // 部分数据可能经纬度写反：尝试自动纠偏
   const swappedLatOk = lng >= -90 && lng <= 90
   const swappedLngOk = lat >= -180 && lat <= 180
   if (swappedLatOk && swappedLngOk) return [lng, lat]
@@ -202,6 +257,7 @@ function renderMarkers() {
   if (!map.value) return
   if (layer.value) layer.value.remove()
   markersByNewsId.clear()
+  openCluster.value = null
 
   const g = L.markerClusterGroup({
     showCoverageOnHover: false,
@@ -219,12 +275,19 @@ function renderMarkers() {
       const dot = 20
       const halo = 36
       const fontSize = 13
+      // 检查聚类中是否包含选中的新闻
+      const hasSelected = cluster.getAllChildMarkers().some((m) => {
+        const news = markerToNews.get(m)
+        return news && news.id === props.selectedId
+      })
+      const bg = hasSelected ? '#ef4444' : '#f97316'
+      const haloBg = hasSelected ? 'rgba(239, 68, 68, 0.24)' : 'rgba(249, 115, 22, 0.24)'
       return L.divIcon({
         className: 'news-cluster-icon',
         html: `
           <div class="news-cluster-wrap" style="width:${halo}px;height:${halo}px;">
-            <span class="news-cluster-halo"></span>
-            <span class="news-cluster-dot" style="width:${dot}px;height:${dot}px;font-size:${fontSize}px;">${count}</span>
+            <span class="news-cluster-halo" style="background:${haloBg}"></span>
+            <span class="news-cluster-dot" style="width:${dot}px;height:${dot}px;font-size:${fontSize}px;background:${bg}">${count}</span>
           </div>
         `,
         iconSize: [halo, halo],
@@ -239,14 +302,53 @@ function renderMarkers() {
     const markers: L.Marker[] = []
     for (const point of points) {
       const m = L.marker(point, { icon: markerIcon(active), keyboard: false })
+      
+      m.bindPopup(singlePopupNode(n), {
+        autoPan: true,
+        closeButton: true,
+        closeOnClick: false,
+        autoClose: true,
+        className: 'single-news-popup',
+      })
+      
+      m.on('mouseover', (event: L.LeafletMouseEvent) => {
+        event.originalEvent?.preventDefault()
+        closeClusterPopup()
+        if (!m.isPopupOpen()) {
+          m.openPopup()
+          // 添加鼠标悬停事件到弹窗容器
+          setTimeout(() => {
+            const popupContainer = m.getPopup()?.getElement()
+            if (popupContainer) {
+              popupContainer.addEventListener('mouseenter', () => {
+                isMouseOverPopup.value = true
+              })
+              popupContainer.addEventListener('mouseleave', () => {
+                isMouseOverPopup.value = false
+              })
+            }
+          }, 0)
+        }
+      })
+      
+      m.on('mouseout', (event: L.LeafletMouseEvent) => {
+        event.originalEvent?.preventDefault()
+        setTimeout(() => {
+          // 只有当鼠标不在弹窗内时才关闭弹窗
+          if (!isMouseOverPopup.value && m.isPopupOpen()) {
+            m.closePopup()
+          }
+        }, 500)
+      })
+      
       m.on('click', (event: L.LeafletMouseEvent) => {
         event.originalEvent?.preventDefault()
         event.originalEvent?.stopPropagation()
         emit('select', n)
         if (m.getPopup()) {
-          m.setPopupContent(popupNode(n))
+          m.setPopupContent(singlePopupNode(n))
         } else {
-          m.bindPopup(popupNode(n), {
+          m.bindPopup(singlePopupNode(n), {
             autoPan: true,
             closeButton: true,
             closeOnClick: false,
@@ -256,13 +358,7 @@ function renderMarkers() {
         }
         m.openPopup()
       })
-      m.bindPopup(popupNode(n), {
-        autoPan: true,
-        closeButton: true,
-        closeOnClick: false,
-        autoClose: true,
-        className: 'single-news-popup',
-      })
+      
       g.addLayer(m)
       markerToNews.set(m, n)
       markers.push(m)
@@ -274,7 +370,36 @@ function renderMarkers() {
     event.originalEvent?.preventDefault()
     event.originalEvent?.stopPropagation()
     const cluster = event.layer
+    g.eachLayer((layer) => {
+      if (layer instanceof L.Marker && layer.isPopupOpen()) {
+        layer.closePopup()
+      }
+    })
     openClusterPopup(cluster)
+  })
+
+  g.on('clustermouseover', (event: L.LeafletEvent & { layer: L.MarkerCluster; originalEvent?: MouseEvent }) => {
+    event.originalEvent?.preventDefault()
+    const cluster = event.layer
+    g.eachLayer((layer) => {
+      if (layer instanceof L.Marker && layer.isPopupOpen()) {
+        layer.closePopup()
+      }
+    })
+    if (!cluster.isPopupOpen()) {
+      openClusterPopup(cluster)
+    }
+  })
+
+  g.on('clustermouseout', (event: L.LeafletEvent & { layer: L.MarkerCluster; originalEvent?: MouseEvent }) => {
+    event.originalEvent?.preventDefault()
+    setTimeout(() => {
+      // 只有当鼠标不在弹窗内时才关闭弹窗
+      if (!isMouseOverPopup.value && openCluster.value === event.layer && openCluster.value.isPopupOpen()) {
+        openCluster.value.closePopup()
+        openCluster.value = null
+      }
+    }, 500)
   })
 
   map.value.addLayer(g)
@@ -301,6 +426,7 @@ function focusSelected() {
   const m = firstMarkerOfSelected()
   if (!m) return
   map.value.panTo(m.getLatLng(), { animate: true, duration: 0.25 })
+  closeClusterPopup()
   m.openPopup()
 }
 
@@ -323,6 +449,40 @@ function fitSelectedCountry() {
   const currentZoom = map.value.getZoom()
   const targetZoom = Math.min(18, currentZoom + 5)
   map.value.setView(latlng, targetZoom, { animate: true })
+}
+
+// 定位到指定地点（从数据库的坐标数据中找到匹配的位置）
+function flyToLocationName(locationName: string) {
+  if (!map.value) return
+  
+  // 固定缩放级别为 6
+  const targetZoom = 6
+  
+  // 在新闻数据中找到匹配的位置
+  for (const news of props.items) {
+    const locations = news.location?.split(/[;；]/) || []
+    const idx = locations.findIndex((loc) => loc.trim() === locationName)
+    if (idx >= 0) {
+      const points = newsCoords(news)
+      if (points.length > 0 && idx < points.length) {
+        map.value.setView(points[idx], targetZoom, { animate: false })
+        return
+      }
+      if (points.length > 0) {
+        map.value.setView(points[0], targetZoom, { animate: false })
+        return
+      }
+    }
+  }
+  
+  // 如果找不到，尝试从第一个新闻点定位
+  if (props.items.length > 0) {
+    const firstNews = props.items[0]
+    const points = newsCoords(firstNews)
+    if (points.length > 0) {
+      map.value.setView(points[0], targetZoom, { animate: false })
+    }
+  }
 }
 
 onMounted(() => {
@@ -365,6 +525,10 @@ watch(
   () => {
     applySelectedStyle()
     focusSelected()
+    // 重新渲染聚类图标以更新选中状态的颜色
+    if (layer.value) {
+      layer.value.refreshClusters()
+    }
   },
 )
 
@@ -372,6 +536,15 @@ watch(
   () => props.focusRequestId,
   () => {
     fitSelectedCountry()
+  },
+)
+
+watch(
+  () => props.flyToLocation,
+  (newLocation) => {
+    if (newLocation) {
+      flyToLocationName(newLocation)
+    }
   },
 )
 
@@ -404,7 +577,7 @@ watch(
   position: absolute;
   inset: 0;
   border-radius: 9999px;
-  background: rgba(239, 68, 68, 0.24);
+  background: rgba(249, 115, 22, 0.24);
 }
 
 .news-cluster-dot {
@@ -416,7 +589,7 @@ watch(
   align-items: center;
   justify-content: center;
   border-radius: 9999px;
-  background: #dc2626;
+  background: #f97316;
   color: #ffffff;
   line-height: 1;
   font-weight: 700;
@@ -425,5 +598,13 @@ watch(
 
 .leaflet-popup-content-wrapper {
   position: relative;
+}
+
+.cluster-news-popup .leaflet-popup-content {
+  margin: 0;
+}
+
+.cluster-popup-content button:hover {
+  background: rgba(228, 228, 231, 0.95) !important;
 }
 </style>

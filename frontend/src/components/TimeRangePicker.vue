@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { Calendar, ChevronDown, X } from 'lucide-vue-next'
+import { Calendar } from 'lucide-vue-next'
 import { cn } from '@/lib/utils'
 
 const props = defineProps<{
@@ -141,16 +141,6 @@ onMounted(() => {
         <span :class="displayText === (props.lang === 'en' ? 'Time Range' : '时间范围') ? 'text-[#b3b3b3]' : 'text-zinc-900'">
           {{ displayText }}
         </span>
-        <button
-          v-if="props.modelValue"
-          class="ml-1 inline-flex items-center justify-center rounded-sm p-0.5 text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900"
-          type="button"
-          aria-label="清除"
-          @click.stop="clearSelection"
-        >
-          <X class="h-3.5 w-3.5" />
-        </button>
-        <ChevronDown class="h-4 w-4 text-zinc-500" :class="open ? 'rotate-180' : ''" />
       </div>
 
       <!-- 下拉面板 -->

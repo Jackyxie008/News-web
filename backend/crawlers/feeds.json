@@ -54,12 +54,5 @@
         "content_can_be_crawled": false,
         "reputation": 72.50,
         "crawl": true
-    },
-    {
-        "source": "TASS",
-        "rss_url": ["https://tass.com/rss/v2.xml?section=world"],
-        "content_can_be_crawled": true,
-        "reputation": 74.50,
-        "crawl": true
     }
 ]

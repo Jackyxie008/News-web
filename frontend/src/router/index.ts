@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import HomePage from '@/pages/HomePage.vue'
 import NewsDetailPage from '@/pages/NewsDetailPage.vue'
+import ReaderPage from '@/pages/ReaderPage.vue'
 
 // 定义路由配置
 const routes = [
@@ -13,6 +14,11 @@ const routes = [
     path: '/news/:id',
     name: 'news-detail',
     component: NewsDetailPage,
+  },
+  {
+    path: '/reader',
+    name: 'reader',
+    component: ReaderPage,
   },
 ]
 

@@ -17,20 +17,30 @@ DB_PATH = BASE_DIR / "data" / "data.db"
 # 调试用：启动时打印一下，看路径对不对
 print(f"正在连接数据库: {DB_PATH}")
 
+# 标准新闻类型列表
+STANDARD_TYPES = [
+    "politics", "military", "disaster", "security", "health",
+    "finance", "society", "science", "technology", "energy",
+    "environment", "sports", "entertainment"
+]
+
 CATEGORY_MAP_ZH = {
     "politics": "政治",
     "diplomacy": "外交",
     "security": "安全",
-    "finance": "经济",
+    "finance": "金融",
     "energy": "能源",
     "environment": "环境",
     "tech": "科技",
+    "technology": "科技",
     "sports": "体育",
     "society": "社会",
     "military": "军事",
-    "entertainment": "娱乐/文化",
+    "entertainment": "娱乐",
     "international": "国际",
     "disaster": "灾害",
+    "health": "健康",
+    "science": "科学",
 }
 
 CATEGORY_MAP_EN = {
@@ -41,12 +51,15 @@ CATEGORY_MAP_EN = {
     "energy": "Energy",
     "environment": "Environment",
     "tech": "Tech",
+    "technology": "Technology",
     "sports": "Sports",
     "society": "Society",
     "military": "Military",
-    "entertainment": "Entertainment/Culture",
+    "entertainment": "Entertainment",
     "international": "International",
     "disaster": "Disaster",
+    "health": "Health",
+    "science": "Science",
 }
 
 
@@ -89,6 +102,15 @@ def extract_country(location: str, lang: str) -> str:
     if not parts:
         return unknown
     return parts[-1]
+
+
+def format_location(location: str) -> str:
+    """格式化地点，显示完整位置信息"""
+    if not location:
+        return ""
+    # 移除换行符和多余空格，统一分隔符
+    parts = [part.strip() for part in re.split(r"[;\n]+", location) if part.strip()]
+    return "; ".join(parts)
 
 
 def summary_text(full_text: str) -> str:
@@ -318,6 +340,20 @@ def extract_keywords_fallback(title: str, full_text: str) -> list[str]:
     return dedup
 
 
+def map_category_to_standard(category: str) -> str:
+    """将任意类别映射到标准类别，如果不在标准列表中则返回原值"""
+    normalized = category.strip().lower()
+    if normalized in STANDARD_TYPES:
+        return normalized
+    # 尝试映射变体
+    variants = {
+        "diplomacy": "politics",
+        "international": "politics",
+        "tech": "technology",
+    }
+    return variants.get(normalized, category)
+
+
 def row_to_news(row: sqlite3.Row, lang: str) -> dict[str, Any] | None:
     points = parse_location_points(row, lang)
     if not points:
@@ -325,7 +361,13 @@ def row_to_news(row: sqlite3.Row, lang: str) -> dict[str, Any] | None:
     lat_value = points[0]["lat"]
     lng_value = points[0]["lng"]
 
-    category = (row["category"] or "").strip().lower()
+    raw_category = (row["category"] or "").strip()
+    # 映射到标准类别
+    standard_category = map_category_to_standard(raw_category)
+    category_map = CATEGORY_MAP_EN if lang == "en" else CATEGORY_MAP_ZH
+    # 使用标准类别作为 type 字段值
+    type_value = standard_category
+
     title = (
         row["title_en"] if lang == "en" else row["title_cn"]
     ) or (
@@ -344,6 +386,8 @@ def row_to_news(row: sqlite3.Row, lang: str) -> dict[str, Any] | None:
         row["location_cn"] if lang == "en" else row["location_en"]
     ) or ""
     country = extract_country(location, lang)
+    full_location = format_location(location) if location else country
+    
     # 根据语言选择对应的关键词字段
     keywords_field = "keywords_en" if lang == "en" else "keywords_cn"
     keywords = parse_keywords(row[keywords_field] or "")
@@ -359,8 +403,6 @@ def row_to_news(row: sqlite3.Row, lang: str) -> dict[str, Any] | None:
 
     image_url, image_source = parse_image_info(row["image_url"] or "", default_source)
 
-    category_map = CATEGORY_MAP_EN if lang == "en" else CATEGORY_MAP_ZH
-
     return {
         "id": str(row["id"]),
         "title": title,
@@ -370,14 +412,14 @@ def row_to_news(row: sqlite3.Row, lang: str) -> dict[str, Any] | None:
         "media": row["media"] or ("Unknown Media" if lang == "en" else "未知媒体"),
         "continent": "Unknown" if lang == "en" else "未知洲",
         "country": country,
-        "type": category_map.get(category, "Unknown" if lang == "en" else "文化"),
+        "type": type_value,  # 使用标准类别
         "heat": calc_heat(row["news_id"] or ""),
         "lat": lat_value,
         "lng": lng_value,
         "locations": points,
-        "location": location or country,
+        "location": full_location or country,  # 完整地点
         "published": row["published"] or "",
-        "newsType": category_map.get(category, "Unknown" if lang == "en" else "文化"),
+        "newsType": category_map.get(raw_category, type_value),  # 显示用映射
         "keywords": keywords,
         "fullText": full_text,
         "links": [item["url"] for item in link_items] if link_items else links,

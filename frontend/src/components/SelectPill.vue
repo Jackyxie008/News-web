@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { ChevronDown, X } from 'lucide-vue-next'
+import { X } from 'lucide-vue-next'
 import { cn } from '@/lib/utils'
 
 const props = defineProps<{
@@ -116,7 +116,6 @@ watch(
         >
           <X class="h-3.5 w-3.5" />
         </button>
-        <ChevronDown class="h-4 w-4 text-zinc-900" />
       </div>
     </div>
 

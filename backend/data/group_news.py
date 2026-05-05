@@ -258,7 +258,7 @@ def group_news():
     # 获取已有分组
     existing_groups = get_existing_groups_vectors()
     
-    SIMILARITY_THRESHOLD = 0.75
+    SIMILARITY_THRESHOLD = 0.85
     
     # ================== 阶段一：新新闻内部互聚类 ==================
     print("阶段一：新新闻内部聚类...")
