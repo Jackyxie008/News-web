@@ -323,7 +323,7 @@ async def worker(name, platform_key, queue, client, db_conn):
             5. **分类**：从下方12个类别中**严格选择其一**
 
             **类别（必须以英文原样输出，不可自创）**：
-            `politics`, `military`, `disaster`, `security`, `finance`, `diplomacy`, `society`, `tech`, `energy`, `environment`, `sports`, `entertainment`
+            `politics`, `military`, `disaster`, `security`, `health`, `finance`, `society`, `science` ,`technology`, `energy`, `environment`, `sports`, `entertainment`
 
             ---
 
