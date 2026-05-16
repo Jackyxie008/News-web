@@ -34,10 +34,10 @@ export type NewsDetail = NewsItem & {
 
 export type FilterState = {
   query: string
-  country: string | null
+  country: string | string[] | null
   media: string | null
-  continent: string | null
-  type: string | null
+  continent: string | string[] | null
+  type: string | string[] | null
   heat: 'hot' | 'time' | null
   timeRange: { start: string; end: string } | null
 }
@@ -80,15 +80,15 @@ function apiUrl(path: string) {
   return `${API_BASE}${path}`
 }
 
-export async function fetchNewsList(lang: Lang = 'zh'): Promise<NewsItem[]> {
-  const cached = newsListCache.get(lang)
-  if (cached) return cached
-  const res = await fetch(apiUrl(`/api/news?lang=${lang}`))
+export async function fetchNewsList(lang: Lang = 'zh', limit = 200, offset = 0): Promise<{ items: NewsItem[]; hasMore: boolean }> {
+  const cacheKey = `${lang}:${offset}:${limit}`
+  const res = await fetch(apiUrl(`/api/news?lang=${lang}&limit=${limit}&offset=${offset}`))
   if (!res.ok) throw new Error(`获取新闻列表失败: ${res.status}`)
   const data = (await res.json()) as { items?: NewsItem[] }
   const items = Array.isArray(data.items) ? data.items : []
-  newsListCache.set(lang, items)
-  return items
+  // 有数据且数量等于limit，认为还有更多
+  const hasMore = items.length >= limit
+  return { items, hasMore }
 }
 
 export async function fetchNewsById(id: string, lang: Lang = 'zh'): Promise<NewsDetail | null> {
@@ -181,27 +181,41 @@ function isPointInContinent(continent: string, lat: number, lng: number, id: str
 export function filterNews(items: NewsItem[], filter: FilterState) {
   const list = items.filter((n) => {
     const coords = getNewsCoords(n)
+    
+    // 处理国家多选
     if (filter.country) {
-      const selected = filter.country.trim().toUpperCase()
-      // 兼容旧值（名称）和新值（ISO alpha-2 code）
-      if (/^[A-Z]{2}$/.test(selected)) {
-        if (!coords.some((point, idx) => isPointInCountry(selected, point.lat, point.lng, `${n.id}:${idx}`))) {
-          return false
-        }
-      } else if (n.country !== filter.country) {
-        return false
+      const countries = Array.isArray(filter.country) ? filter.country : [filter.country]
+      if (countries.length > 0) {
+        const matchAny = countries.some((selected) => {
+          const trimmed = selected.trim().toUpperCase()
+          if (/^[A-Z]{2}$/.test(trimmed)) {
+            return coords.some((point, idx) => isPointInCountry(trimmed, point.lat, point.lng, `${n.id}:${idx}`))
+          }
+          return n.country === selected
+        })
+        if (!matchAny) return false
       }
     }
+    
     if (filter.media && n.media !== filter.media) return false
+    
+    // 处理大洲多选
     if (filter.continent) {
-      const selectedContinent = filter.continent
-      if (
-        !coords.some((point, idx) => isPointInContinent(selectedContinent, point.lat, point.lng, `${n.id}:${idx}`))
-      ) {
-        return false
+      const continents = Array.isArray(filter.continent) ? filter.continent : [filter.continent]
+      if (continents.length > 0) {
+        const matchAny = continents.some((selectedContinent) =>
+          coords.some((point, idx) => isPointInContinent(selectedContinent, point.lat, point.lng, `${n.id}:${idx}`))
+        )
+        if (!matchAny) return false
       }
     }
-    if (filter.type && n.type !== filter.type) return false
+    
+    // 处理类型多选
+    if (filter.type) {
+      const types = Array.isArray(filter.type) ? filter.type : [filter.type]
+      if (types.length > 0 && !types.includes(n.type)) return false
+    }
+    
     if (filter.timeRange) {
       if (n.date < filter.timeRange.start) return false
       if (n.date > filter.timeRange.end) return false

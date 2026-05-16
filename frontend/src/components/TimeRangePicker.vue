@@ -14,34 +14,44 @@ const emit = defineEmits<{
 
 const open = ref(false)
 const customMode = ref(false)
+
+// 使用本地日期格式
+const formatDate = (d: Date) => {
+  const year = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
 const now = new Date()
-const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-const startDate = ref(new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10))
-const endDate = ref(today.toISOString().slice(0, 10))
+const startDate = ref(formatDate(new Date(now.getTime() - 24 * 60 * 60 * 1000)))
+const endDate = ref(formatDate(now))
 
 // 预设选项配置
 const presets = computed(() => {
   const now = new Date()
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000)
+  const threeDaysAgo = new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000)
+  const sevenDaysAgo = new Date(now.getTime() - 6 * 24 * 60 * 60 * 1000)
 
   return [
     {
       label: props.lang === 'en' ? 'Last 24h' : '最近24小时',
       value: '24h',
-      start: new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
-      end: today.toISOString().slice(0, 10),
+      start: formatDate(oneDayAgo),
+      end: formatDate(now),
     },
     {
       label: props.lang === 'en' ? 'Last 3 days' : '最近3天',
       value: '3d',
-      start: new Date(today.getTime() - 2 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
-      end: today.toISOString().slice(0, 10),
+      start: formatDate(threeDaysAgo),
+      end: formatDate(now),
     },
     {
       label: props.lang === 'en' ? 'Last 7 days' : '最近7天',
       value: '7d',
-      start: new Date(today.getTime() - 6 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
-      end: today.toISOString().slice(0, 10),
+      start: formatDate(sevenDaysAgo),
+      end: formatDate(now),
     },
   ]
 })
@@ -79,8 +89,8 @@ function enableCustomMode() {
     endDate.value = props.modelValue.end
   } else {
     const now = new Date()
-    endDate.value = now.toISOString().slice(0, 10)
-    startDate.value = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+    endDate.value = formatDate(now)
+    startDate.value = formatDate(new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000))
   }
 }
 
@@ -116,10 +126,9 @@ function onClickOutside(e: MouseEvent) {
 onMounted(() => {
   if (!props.modelValue) {
     const now = new Date()
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
     emit('update:modelValue', {
-      start: new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
-      end: today.toISOString().slice(0, 10),
+      start: formatDate(new Date(now.getTime() - 24 * 60 * 60 * 1000)),
+      end: formatDate(now),
     })
   }
 })

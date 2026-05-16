@@ -440,7 +440,7 @@ def get_connection() -> sqlite3.Connection:
     return conn
 
 
-def fetch_news_list(limit: int = 1000, lang: str = "zh") -> list[dict[str, Any]]:
+def fetch_news_list(limit: int = 200, offset: int = 0, lang: str = "zh") -> list[dict[str, Any]]:
     with get_connection() as conn:
         rows = conn.execute(
             """
@@ -491,9 +491,9 @@ def fetch_news_list(limit: int = 1000, lang: str = "zh") -> list[dict[str, Any]]
               ) AS primary_link
             FROM grouped_news g
             ORDER BY COALESCE(g.published, '') DESC, g.id DESC
-            LIMIT ?
+            LIMIT ? OFFSET ?
             """,
-            (limit,),
+            (limit, offset),
         ).fetchall()
 
     result: list[dict[str, Any]] = []
@@ -592,12 +592,16 @@ class ApiHandler(BaseHTTPRequestHandler):
         if path == "/api/news":
             query = parse_qs(parsed.query)
             try:
-                limit = int(query.get("limit", ["1000"])[0])
+                limit = int(query.get("limit", ["200"])[0])
             except ValueError:
-                limit = 1000
+                limit = 200
+            try:
+                offset = int(query.get("offset", ["0"])[0])
+            except ValueError:
+                offset = 0
             lang = normalize_lang(query.get("lang", ["zh"])[0])
-            items = fetch_news_list(limit=max(1, min(limit, 5000)), lang=lang)
-            self._write_json({"items": items})
+            items = fetch_news_list(limit=max(1, min(limit, 5000)), lang=lang, offset=offset)
+            self._write_json({"items": items, "offset": offset, "limit": limit})
             return
 
         if path.startswith("/api/news/"):

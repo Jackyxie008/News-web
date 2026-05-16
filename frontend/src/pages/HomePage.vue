@@ -30,6 +30,10 @@ const filter = ref<FilterState>({
 })
 
 const allItems = ref<NewsItem[]>([])
+const hasMore = ref(false)
+const isLoading = ref(false)
+const filterKey = ref(0) // 用于追踪筛选变化
+
 const filteredBaseItems = computed(() => filterNews(allItems.value, filter.value))
 const filteredItems = computed(() => {
   if (mode.value === 'hot') {
@@ -87,10 +91,18 @@ function onChangeMode(value: 'hot' | 'all') {
 
 function onReset() {
   const now = new Date()
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  // 计算24小时前
+  const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000)
+  // 使用本地日期格式 (YYYY-MM-DD)
+  const formatDate = (d: Date) => {
+    const year = d.getFullYear()
+    const month = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }
   const defaultTimeRange = {
-    start: new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
-    end: today.toISOString().slice(0, 10),
+    start: formatDate(oneDayAgo),
+    end: formatDate(now),
   }
   filter.value = {
     query: '',
@@ -103,12 +115,59 @@ function onReset() {
   }
 }
 
-onMounted(async () => {
+// 初始加载和筛选变化时重新加载
+async function loadNews(reset = false) {
+  if (isLoading.value) return
+  isLoading.value = true
   try {
-    allItems.value = await fetchNewsList(lang.value)
+    if (reset) {
+      allItems.value = []
+    }
+    const offset = allItems.value.length
+    const result = await fetchNewsList(lang.value, 200, offset)
+    
+    if (reset) {
+      allItems.value = result.items
+    } else {
+      allItems.value = [...allItems.value, ...result.items]
+    }
+    hasMore.value = result.hasMore
   } catch (error) {
     console.error(error)
-    allItems.value = []
+  } finally {
+    isLoading.value = false
+  }
+}
+
+// 滚动加载更多
+async function loadMore() {
+  if (!hasMore.value || isLoading.value) return
+  await loadNews(false)
+}
+
+onMounted(async () => {
+  await loadNews(true)
+})
+
+// 监听筛选变化，重新加载数据
+watch(filter, async () => {
+  filterKey.value++
+  await loadNews(true)
+}, { deep: true })
+
+// 监听语言变化
+watch(lang, async (nextLang) => {
+  localStorage.setItem('lang', nextLang)
+  await loadNews(true)
+  if (!selectedId.value) {
+    selectedDetail.value = null
+    return
+  }
+  try {
+    selectedDetail.value = await fetchNewsById(selectedId.value, nextLang)
+  } catch (error) {
+    console.error(error)
+    selectedDetail.value = null
   }
 })
 
@@ -125,33 +184,8 @@ watch(selectedId, async (id) => {
   }
 })
 
-watch(lang, async (nextLang) => {
-  localStorage.setItem('lang', nextLang)
-  filter.value = {
-    ...filter.value,
-    type: null,
-    continent: null,
-    country: null,
-    media: null,
-    heat: null,
-  }
-  try {
-    allItems.value = await fetchNewsList(nextLang)
-  } catch (error) {
-    console.error(error)
-    allItems.value = []
-  }
-  if (!selectedId.value) {
-    selectedDetail.value = null
-    return
-  }
-  try {
-    selectedDetail.value = await fetchNewsById(selectedId.value, nextLang)
-  } catch (error) {
-    console.error(error)
-    selectedDetail.value = null
-  }
-})
+// 暴露加载更多方法给父组件
+defineExpose({ loadMore })
 </script>
 
 <template>
@@ -162,7 +196,10 @@ watch(lang, async (nextLang) => {
       :lang="lang"
       :focus-request-id="focusRequestId"
       :fly-to-location="flyToLocation"
+      :has-more="hasMore"
+      :is-loading="isLoading"
       @select="onSelectNews"
+      @load-more="loadMore"
     />
     <NewsDetailCard
       :visible="Boolean(selectedId)"

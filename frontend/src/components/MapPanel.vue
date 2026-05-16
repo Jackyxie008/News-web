@@ -10,22 +10,23 @@ const props = defineProps<{
   lang: 'zh' | 'en'
   focusRequestId?: number
   flyToLocation?: string | null
+  hasMore?: boolean
+  isLoading?: boolean
 }>()
 
-const emit = defineEmits<{ select: [news: NewsItem | null] }>()
+const emit = defineEmits<{ select: [news: NewsItem | null]; 'load-more': [] }>()
 
 const mapRef = ref<HTMLDivElement | null>(null)
 const map = ref<L.Map | null>(null)
 const layer = ref<L.MarkerClusterGroup | null>(null)
 const tileLayer = ref<L.TileLayer | null>(null)
 const markersByNewsId = new Map<string, L.Marker[]>()
-const markerToNews = new WeakMap<L.Marker, NewsItem>()
+const markerToNews = new Map<L.Marker, NewsItem>()
 
 // 跟踪当前打开的聚类弹窗
 const openCluster = ref<L.MarkerCluster | null>(null)
-
-// 跟踪当前鼠标是否在弹窗内
-const isMouseOverPopup = ref(false)
+// 延迟关闭的定时器 ID
+let closeClusterTimer: number | null = null
 
 const selected = computed(() => props.items.find((n) => n.id === props.selectedId) ?? null)
 
@@ -65,30 +66,30 @@ function getLocationDisplay(news: NewsItem): string {
 function singlePopupNode(n: NewsItem) {
   const wrap = document.createElement('div')
   wrap.className = 'single-news-popup-content'
-  wrap.style.width = '300px'
+  wrap.style.width = '280px'
   wrap.style.fontFamily = 'ui-sans-serif, system-ui'
-  wrap.style.padding = '8px'
+  wrap.style.padding = '12px'
+  wrap.style.boxSizing = 'border-box'
 
   const title = document.createElement('div')
   title.textContent = n.title
   title.style.fontWeight = '700'
-  title.style.fontSize = '14px'
-  title.style.lineHeight = '18px'
-  title.style.marginBottom = '4px'
+  title.style.fontSize = '12px'
+  title.style.lineHeight = '16px'
+  title.style.marginBottom = '2px'
   title.style.color = '#18181b'
 
   const dateText = document.createElement('div')
   dateText.textContent = formatFullDate(n.date, props.lang)
   dateText.style.color = '#71717a'
-  dateText.style.fontSize = '12px'
-  dateText.style.lineHeight = '16px'
+  dateText.style.fontSize = '11px'
+  dateText.style.lineHeight = '14px'
 
   const locationText = document.createElement('div')
   locationText.textContent = getLocationDisplay(n)
   locationText.style.color = '#71717a'
-  locationText.style.fontSize = '12px'
-  locationText.style.lineHeight = '16px'
-  locationText.style.marginTop = '2px'
+  locationText.style.fontSize = '11px'
+  locationText.style.lineHeight = '14px'
 
   wrap.appendChild(title)
   wrap.appendChild(dateText)
@@ -106,7 +107,7 @@ function clusterPopupNode(cluster: L.MarkerCluster) {
   wrap.style.flexDirection = 'column'
 
   const header = document.createElement('div')
-  header.textContent = props.lang === 'en' ? `News (${cluster.getChildCount()})` : `新闻 (${cluster.getChildCount()})`
+  header.textContent = props.lang === 'en' ? `News Points (${cluster.getChildCount()})` : `新闻点 (${cluster.getChildCount()})`
   header.style.fontWeight = '700'
   header.style.fontSize = '13px'
   header.style.padding = '8px 8px 4px'
@@ -189,22 +190,12 @@ function clusterPopupNode(cluster: L.MarkerCluster) {
 }
 
 function openClusterPopup(cluster: L.MarkerCluster) {
-  isMouseOverPopup.value = false
+  // 清除延迟关闭的定时器
+  if (closeClusterTimer !== null) {
+    clearTimeout(closeClusterTimer)
+    closeClusterTimer = null
+  }
   const content = clusterPopupNode(cluster)
-  
-  // 添加鼠标悬停事件到弹窗容器
-  setTimeout(() => {
-    const popupContainer = cluster.getPopup()?.getElement()
-    if (popupContainer) {
-      popupContainer.addEventListener('mouseenter', () => {
-        isMouseOverPopup.value = true
-      })
-      popupContainer.addEventListener('mouseleave', () => {
-        isMouseOverPopup.value = false
-      })
-    }
-  }, 0)
-  
   if (cluster.getPopup()) {
     cluster.setPopupContent(content)
   } else {
@@ -219,6 +210,20 @@ function openClusterPopup(cluster: L.MarkerCluster) {
   }
   openCluster.value = cluster
   cluster.openPopup()
+  
+  // 监听弹窗的 mouseover，防止关闭
+  const popup = cluster.getPopup()
+  if (popup) {
+    const popupElement = popup.getElement()
+    if (popupElement) {
+      popupElement.addEventListener('mouseenter', () => {
+        if (closeClusterTimer !== null) {
+          clearTimeout(closeClusterTimer)
+          closeClusterTimer = null
+        }
+      })
+    }
+  }
 }
 
 function closeClusterPopup() {
@@ -257,6 +262,7 @@ function renderMarkers() {
   if (!map.value) return
   if (layer.value) layer.value.remove()
   markersByNewsId.clear()
+  markerToNews.clear()
   openCluster.value = null
 
   const g = L.markerClusterGroup({
@@ -303,9 +309,12 @@ function renderMarkers() {
     for (const point of points) {
       const m = L.marker(point, { icon: markerIcon(active), keyboard: false })
       
+      // 先设置 markerToNews，再添加到聚类
+      markerToNews.set(m, n)
+      
       m.bindPopup(singlePopupNode(n), {
         autoPan: true,
-        closeButton: true,
+        closeButton: false,
         closeOnClick: false,
         autoClose: true,
         className: 'single-news-popup',
@@ -316,26 +325,13 @@ function renderMarkers() {
         closeClusterPopup()
         if (!m.isPopupOpen()) {
           m.openPopup()
-          // 添加鼠标悬停事件到弹窗容器
-          setTimeout(() => {
-            const popupContainer = m.getPopup()?.getElement()
-            if (popupContainer) {
-              popupContainer.addEventListener('mouseenter', () => {
-                isMouseOverPopup.value = true
-              })
-              popupContainer.addEventListener('mouseleave', () => {
-                isMouseOverPopup.value = false
-              })
-            }
-          }, 0)
         }
       })
       
       m.on('mouseout', (event: L.LeafletMouseEvent) => {
         event.originalEvent?.preventDefault()
         setTimeout(() => {
-          // 只有当鼠标不在弹窗内时才关闭弹窗
-          if (!isMouseOverPopup.value && m.isPopupOpen()) {
+          if (m.isPopupOpen()) {
             m.closePopup()
           }
         }, 500)
@@ -350,7 +346,7 @@ function renderMarkers() {
         } else {
           m.bindPopup(singlePopupNode(n), {
             autoPan: true,
-            closeButton: true,
+            closeButton: false,
             closeOnClick: false,
             autoClose: true,
             className: 'single-news-popup',
@@ -360,7 +356,6 @@ function renderMarkers() {
       })
       
       g.addLayer(m)
-      markerToNews.set(m, n)
       markers.push(m)
     }
     markersByNewsId.set(n.id, markers)
@@ -380,6 +375,11 @@ function renderMarkers() {
 
   g.on('clustermouseover', (event: L.LeafletEvent & { layer: L.MarkerCluster; originalEvent?: MouseEvent }) => {
     event.originalEvent?.preventDefault()
+    // 清除延迟关闭的定时器
+    if (closeClusterTimer !== null) {
+      clearTimeout(closeClusterTimer)
+      closeClusterTimer = null
+    }
     const cluster = event.layer
     g.eachLayer((layer) => {
       if (layer instanceof L.Marker && layer.isPopupOpen()) {
@@ -393,13 +393,7 @@ function renderMarkers() {
 
   g.on('clustermouseout', (event: L.LeafletEvent & { layer: L.MarkerCluster; originalEvent?: MouseEvent }) => {
     event.originalEvent?.preventDefault()
-    setTimeout(() => {
-      // 只有当鼠标不在弹窗内时才关闭弹窗
-      if (!isMouseOverPopup.value && openCluster.value === event.layer && openCluster.value.isPopupOpen()) {
-        openCluster.value.closePopup()
-        openCluster.value = null
-      }
-    }, 500)
+    // 不再自动关闭，让用户移到弹窗上
   })
 
   map.value.addLayer(g)
@@ -425,9 +419,12 @@ function focusSelected() {
   if (!selected.value) return
   const m = firstMarkerOfSelected()
   if (!m) return
-  map.value.panTo(m.getLatLng(), { animate: true, duration: 0.25 })
   closeClusterPopup()
   m.openPopup()
+  // 刷新聚类图标以更新颜色
+  if (layer.value) {
+    layer.value.refreshClusters()
+  }
 }
 
 function centerSelected() {
@@ -436,7 +433,11 @@ function centerSelected() {
   const m = firstMarkerOfSelected()
   if (!m) return
   const currentZoom = map.value.getZoom()
-  map.value.setView(m.getLatLng(), currentZoom, { animate: true })
+  map.value.setView(m.getLatLng(), currentZoom, { animate: false })
+  // 刷新聚类图标以更新颜色
+  if (layer.value) {
+    layer.value.refreshClusters()
+  }
 }
 
 function fitSelectedCountry() {
@@ -448,7 +449,11 @@ function fitSelectedCountry() {
   const latlng = m.getLatLng()
   const currentZoom = map.value.getZoom()
   const targetZoom = Math.min(18, currentZoom + 5)
-  map.value.setView(latlng, targetZoom, { animate: true })
+  map.value.setView(latlng, targetZoom, { animate: false })
+  // 刷新聚类图标以更新颜色
+  if (layer.value) {
+    layer.value.refreshClusters()
+  }
 }
 
 // 定位到指定地点（从数据库的坐标数据中找到匹配的位置）
@@ -466,10 +471,21 @@ function flyToLocationName(locationName: string) {
       const points = newsCoords(news)
       if (points.length > 0 && idx < points.length) {
         map.value.setView(points[idx], targetZoom, { animate: false })
+        // 延迟重新渲染聚类以更新颜色
+        setTimeout(() => {
+          if (layer.value) {
+            renderMarkers()
+          }
+        }, 100)
         return
       }
       if (points.length > 0) {
         map.value.setView(points[0], targetZoom, { animate: false })
+        setTimeout(() => {
+          if (layer.value) {
+            renderMarkers()
+          }
+        }, 100)
         return
       }
     }
@@ -481,6 +497,11 @@ function flyToLocationName(locationName: string) {
     const points = newsCoords(firstNews)
     if (points.length > 0) {
       map.value.setView(points[0], targetZoom, { animate: false })
+      setTimeout(() => {
+        if (layer.value) {
+          renderMarkers()
+        }
+      }, 100)
     }
   }
 }
@@ -504,6 +525,16 @@ onMounted(() => {
   tileLayer.value = t
   L.control.zoom({ position: 'bottomleft' }).addTo(m)
 
+  // 监听缩放变化，刷新聚类图标
+  m.on('zoomend', () => {
+    if (layer.value) {
+      // 延迟重新渲染以确保状态正确
+      setTimeout(() => {
+        renderMarkers()
+      }, 50)
+    }
+  })
+
   map.value = m
   renderMarkers()
 })
@@ -524,11 +555,13 @@ watch(
   () => props.selectedId,
   () => {
     applySelectedStyle()
+    // 延迟重新渲染聚类以确保 markerToNews 已更新
+    setTimeout(() => {
+      if (map.value && layer.value) {
+        renderMarkers()
+      }
+    }, 0)
     focusSelected()
-    // 重新渲染聚类图标以更新选中状态的颜色
-    if (layer.value) {
-      layer.value.refreshClusters()
-    }
   },
 )
 
@@ -544,6 +577,12 @@ watch(
   (newLocation) => {
     if (newLocation) {
       flyToLocationName(newLocation)
+      // 延迟重新渲染聚类以更新颜色
+      setTimeout(() => {
+        if (layer.value) {
+          renderMarkers()
+        }
+      }, 200)
     }
   },
 )
@@ -606,5 +645,14 @@ watch(
 
 .cluster-popup-content button:hover {
   background: rgba(228, 228, 231, 0.95) !important;
+}
+
+.single-news-popup .leaflet-popup-content-wrapper {
+  border-radius: 6px;
+  padding: 0 !important;
+}
+
+.single-news-popup .leaflet-popup-content {
+  margin: 0 !important;
 }
 </style>

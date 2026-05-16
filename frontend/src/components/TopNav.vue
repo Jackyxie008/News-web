@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router'
 import { List } from 'lucide-vue-next'
 import gTranslateIcon from '@/assets/g_translate.svg'
 import ResetButton from '@/components/ResetButton.vue'
-import SelectPill from '@/components/SelectPill.vue'
+import MultiSelectPill from '@/components/MultiSelectPill.vue'
 import SearchPill from '@/components/SearchPill.vue'
 import TimeRangePicker from '@/components/TimeRangePicker.vue'
 
@@ -12,9 +12,9 @@ const props = defineProps<{
   lang: 'zh' | 'en'
   mode: 'hot' | 'all'
   query: string
-  type: string | null
-  continent: string | null
-  country: string | null
+  type: string | string[] | null
+  continent: string | string[] | null
+  country: string | string[] | null
   timeRange: { start: string; end: string } | null
   typeOptions: { label: string; value: string }[]
   continentOptions: { label: string; value: string }[]
@@ -25,9 +25,9 @@ const emit = defineEmits<{
   'update:lang': [value: 'zh' | 'en']
   'update:mode': [value: 'hot' | 'all']
   'update:query': [value: string]
-  'update:type': [value: string | null]
-  'update:continent': [value: string | null]
-  'update:country': [value: string | null]
+  'update:type': [value: string | string[] | null]
+  'update:continent': [value: string | string[] | null]
+  'update:country': [value: string | string[] | null]
   'update:timeRange': [value: { start: string; end: string } | null]
   reset: []
 }>()
@@ -117,32 +117,39 @@ const menuItems = [
       </div>
 
       <!-- 右侧筛选控件 -->
-      <div class="ml-auto flex flex-1 items-center justify-end gap-2">
+      <div class="ml-auto flex flex-1 items-center justify-end gap-6">
         <ResetButton :lang="props.lang" @click="emit('reset')" />
-        <SelectPill
-          :model-value="props.type"
-          :placeholder="props.lang === 'en' ? 'Category' : '新闻类型'"
-          :options="props.typeOptions"
-          @update:model-value="(value) => emit('update:type', value)"
-        />
-        <SelectPill
-          :model-value="props.continent"
-          :placeholder="props.lang === 'en' ? 'Continent' : '大洲'"
-          :options="props.continentOptions"
-          @update:model-value="(value) => emit('update:continent', value)"
-        />
-        <SelectPill
-          :model-value="props.country"
-          :placeholder="props.lang === 'en' ? 'Country/Region' : '国家/地区'"
-          :options="props.countryOptions"
-          @update:model-value="(value) => emit('update:country', value)"
-        />
-        <TimeRangePicker
-          :model-value="props.timeRange"
-          :lang="props.lang"
-          @update:model-value="(value) => emit('update:timeRange', value)"
-        />
-        <div class="w-[360px]">
+        <div class="flex items-center gap-32">
+          <MultiSelectPill
+            :model-value="Array.isArray(props.type) ? props.type : (props.type ? [props.type] : [])"
+            :placeholder="props.lang === 'en' ? 'Category' : '新闻类型'"
+            :options="props.typeOptions"
+            class="w-[50px]"
+            @update:model-value="(value) => emit('update:type', value.length > 0 ? value : null)"
+          />
+          <MultiSelectPill
+            :model-value="Array.isArray(props.continent) ? props.continent : (props.continent ? [props.continent] : [])"
+            :placeholder="props.lang === 'en' ? 'Continent' : '大洲'"
+            :options="props.continentOptions"
+            class="w-[50px]"
+            @update:model-value="(value) => emit('update:continent', value.length > 0 ? value : null)"
+          />
+          <MultiSelectPill
+            :model-value="Array.isArray(props.country) ? props.country : (props.country ? [props.country] : [])"
+            :placeholder="props.lang === 'en' ? 'Country/Region' : '国家/地区'"
+            :options="props.countryOptions"
+            class="w-[50px]"
+            @update:model-value="(value) => emit('update:country', value.length > 0 ? value : null)"
+          />
+        </div>
+        <div class="ml-28">
+          <TimeRangePicker
+            :model-value="props.timeRange"
+            :lang="props.lang"
+            @update:model-value="(value) => emit('update:timeRange', value)"
+          />
+        </div>
+        <div class="w-[280px]">
           <SearchPill
             :model-value="props.query"
             :placeholder="props.lang === 'en' ? 'Search' : '搜索'"

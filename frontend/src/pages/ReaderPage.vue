@@ -7,10 +7,13 @@ import { CONTINENTS_EN, CONTINENTS_ZH, getAllCountryOptions } from '@/lib/geo'
 
 const lang = ref<Lang>((localStorage.getItem('lang') as Lang) === 'en' ? 'en' : 'zh')
 const mode = ref<'hot' | 'all'>('hot')
+const modeKey = ref(0) // 用于追踪模式变化，重新加载数据
 
 const allItems = ref<NewsItem[]>([])
+const hasMore = ref(false)
+const isLoading = ref(false)
 const query = ref('')
-const typeFilter = ref<string | null>(null)
+const typeFilter = ref<string | string[] | null>(null)
 const timeRange = ref<{ start: string; end: string } | null>(null)
 
 // 选中的新闻
@@ -42,22 +45,58 @@ const filter = computed(() => ({
 }))
 
 const filteredItems = computed(() => {
-  return filterNews(allItems.value, filter.value).slice().sort((a, b) => b.ts - a.ts)
+  const items = filterNews(allItems.value, filter.value)
+  // 根据模式排序：热点模式按热度排序，全部模式按时间排序
+  if (mode.value === 'hot') {
+    return items.slice().sort((a, b) => b.heat - a.heat)
+  }
+  return items.slice().sort((a, b) => b.ts - a.ts)
 })
+
+// 加载新闻数据
+async function loadNews(reset = false) {
+  if (isLoading.value) return
+  isLoading.value = true
+  try {
+    if (reset) {
+      allItems.value = []
+    }
+    const offset = allItems.value.length
+    const result = await fetchNewsList(lang.value, 200, offset)
+    
+    if (reset) {
+      allItems.value = result.items
+    } else {
+      allItems.value = [...allItems.value, ...result.items]
+    }
+    hasMore.value = result.hasMore
+  } catch (error) {
+    console.error(error)
+  } finally {
+    isLoading.value = false
+  }
+}
+
+// 滚动加载更多
+async function loadMore() {
+  if (!hasMore.value || isLoading.value) return
+  await loadNews(false)
+}
 
 // 默认选择最近24小时
 onMounted(async () => {
   const now = new Date()
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const formatDate = (d: Date) => {
+    const year = d.getFullYear()
+    const month = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }
   timeRange.value = {
-    start: new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
-    end: today.toISOString().slice(0, 10),
+    start: formatDate(new Date(now.getTime() - 24 * 60 * 60 * 1000)),
+    end: formatDate(now),
   }
-  try {
-    allItems.value = await fetchNewsList(lang.value)
-  } catch (error) {
-    console.error(error)
-  }
+  await loadNews(true)
 })
 
 // 监听选中的新闻 ID，获取详情
@@ -92,9 +131,7 @@ function onChangeLang(value: Lang) {
   lang.value = value
   localStorage.setItem('lang', value)
   // 切换语言后重新获取新闻列表
-  fetchNewsList(lang.value).then((items) => {
-    allItems.value = items
-  })
+  loadNews(true)
   // 重新获取选中的新闻详情
   if (selectedId.value) {
     fetchNewsById(selectedId.value, lang.value).then((detail) => {
@@ -103,21 +140,40 @@ function onChangeLang(value: Lang) {
   }
 }
 
+function onChangeMode(value: 'hot' | 'all') {
+  mode.value = value
+}
+
 function onReset() {
   const now = new Date()
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const formatDate = (d: Date) => {
+    const year = d.getFullYear()
+    const month = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }
   timeRange.value = {
-    start: new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
-    end: today.toISOString().slice(0, 10),
+    start: formatDate(new Date(now.getTime() - 24 * 60 * 60 * 1000)),
+    end: formatDate(now),
   }
   query.value = ''
   typeFilter.value = null
 }
 
+// 监听筛选变化，重新加载数据
+watch([query, typeFilter, timeRange], async () => {
+  // 筛选变化时重新加载
+}, { deep: true })
+
 const t = computed(() => ({
   title: lang.value === 'en' ? 'News Reader' : '新闻阅读器',
   noResults: lang.value === 'en' ? 'No news found' : '暂无新闻',
+  loading: lang.value === 'en' ? 'Loading...' : '加载中...',
+  loadMore: lang.value === 'en' ? 'Load More' : '加载更多',
 }))
+
+// 暴露加载更多方法
+defineExpose({ loadMore })
 </script>
 
 <template>
@@ -134,7 +190,7 @@ const t = computed(() => ({
       :continent-options="continentOptions"
       :country-options="countryOptions"
       @update:lang="onChangeLang"
-      @update:mode="(v) => {}"
+      @update:mode="onChangeMode"
       @update:query="(v) => (query = v)"
       @update:type="(v) => (typeFilter = v)"
       @update:continent="(v) => {}"
@@ -149,7 +205,10 @@ const t = computed(() => ({
       <main class="flex-1 overflow-y-auto px-6 py-6">
         <h1 class="mb-6 text-2xl font-bold">{{ t.title }}</h1>
 
-        <div v-if="filteredItems.length === 0" class="py-12 text-center text-zinc-500">
+        <div v-if="isLoading && filteredItems.length === 0" class="py-12 text-center text-zinc-500">
+          {{ t.loading }}
+        </div>
+        <div v-else-if="filteredItems.length === 0" class="py-12 text-center text-zinc-500">
           {{ t.noResults }}
         </div>
         <div v-else class="space-y-3">
@@ -181,6 +240,17 @@ const t = computed(() => ({
                 <p class="mt-2 text-sm text-zinc-600 line-clamp-2">{{ item.summary || '' }}</p>
               </div>
             </div>
+          </div>
+          
+          <!-- 加载更多按钮 -->
+          <div v-if="hasMore" class="py-4 text-center">
+            <button
+              class="rounded-lg bg-zinc-100 px-6 py-2 text-sm text-zinc-600 hover:bg-zinc-200"
+              :disabled="isLoading"
+              @click="loadMore"
+            >
+              {{ isLoading ? t.loading : t.loadMore }}
+            </button>
           </div>
         </div>
       </main>
