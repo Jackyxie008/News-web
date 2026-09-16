@@ -52,13 +52,26 @@
       }
     }
   },
-  "nim_deepseek-v3.2": {
-    "enabled": false,
+  "nim_step-3.5-flash": {
+    "enabled": true,
     "url": "https://integrate.api.nvidia.com/v1/chat/completions",
     "rate_limit": 0.1,
     "concurrency": 1,
     "env_key": "NIM_API_KEY",
-    "model": "deepseek-ai/deepseek-v3.2",
+    "model": "stepfun-ai/step-3.5-flash",
+    "extra_options": {
+      "chat_template_kwargs": {
+        "enable_thinking": false
+      }
+    }
+  },
+  "nim_qwen3": {
+    "enabled": true,
+    "url": "https://integrate.api.nvidia.com/v1/chat/completions",
+    "rate_limit": 0.1,
+    "concurrency": 1,
+    "env_key": "NIM_API_KEY",
+    "model": "qwen/qwen3-coder-480b-a35b-instruct",
     "extra_options": {
       "chat_template_kwargs": {
         "enable_thinking": false
@@ -66,7 +79,7 @@
     }
   },
   "silicon_Qwen3.5-4B": {
-    "enabled": true,
+    "enabled": false,
     "url": "https://api.siliconflow.cn/v1/chat/completions",
     "rate_limit": 1.0,
     "concurrency": 2,
@@ -88,7 +101,7 @@
     "extra_options": {}
   },
   "silicon_Qwen3-8B": {
-    "enabled": true,
+    "enabled": false,
     "url": "https://api.siliconflow.cn/v1/chat/completions",
     "rate_limit": 1.0,
     "concurrency": 2,

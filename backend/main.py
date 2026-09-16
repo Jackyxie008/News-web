@@ -101,3 +101,7 @@ if __name__ == "__main__":
         asyncio.run(main())
     except KeyboardInterrupt:
         print("\n\n👋 服务已正常停止")
+    # try:
+    #     asyncio.run(run_pipeline())
+    # except KeyboardInterrupt:
+    #     print("\n\n👋 服务已正常停止")
