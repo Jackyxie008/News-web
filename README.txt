@@ -15,3 +15,6 @@
 再在另一个终端输入：
 cd frontend
 npm run dev
+
+
+详情请看docs
