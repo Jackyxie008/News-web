@@ -4,6 +4,8 @@
 
 在backend/data/platforms.json里可以增减API平台。
 
+在backend\crawlers\feeds.json里可以增减新闻平台RSS。
+
 然后运行backend/main.py。
 
 ###前端
